@@ -87,7 +87,7 @@ class EnsimeClient(object):
         self.matches = []
         self.errors = []
         self.vim.command("highlight EnError ctermbg=red gui=underline")
-        if self.vim.eval("exists(\"g:EnErrorStyle\")") == "0":
+        if not self.vim.eval("exists(\"g:EnErrorStyle\")"):
             self.vim.command("let g:EnErrorStyle='EnError'")
         self.suggests = None
         self.ensime = None
