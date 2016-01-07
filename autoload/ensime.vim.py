@@ -301,7 +301,7 @@ class EnsimeClient(object):
                 self.log("handle_string_response: browsing doc path {}".format(url))
                 browser = os.environ.get("BROWSER")
                 if browser != None:
-                    subprocess.Popen([browser, url])
+                    subprocess.Popen([browser, url], stderr=subprocess.PIPE, stdout=subprocess.PIPE)
                 else:
                     self.log("handle_string_response: no browser variable defined")
                 self.browse = False
@@ -334,10 +334,10 @@ class EnsimeClient(object):
                 #self.message(payload["declPos"]["file"])
                 if self.open_definition:
                     self.clean_errors()
+                    self.vim.command("doautocmd BufLeave")
                     self.vim.command("{} {}".format("split" if self.split else "e", payload["declPos"]["file"]))
                     self.set_position(payload["declPos"])
-                    self.vim.command("syntax enable")
-                    self.vim.command("filetype detect")
+                    self.vim.command("doautocmd BufRead,BufEnter")
             except KeyError:
                 self.message("symbol not found")
         elif typehint == "IndexerReadyEvent":
