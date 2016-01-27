@@ -19,6 +19,7 @@ import logging
 import time
 import datetime
 import inspect
+import unicodedata
 
 # Queue depends on python version
 if sys.version_info > (3, 0):
@@ -34,8 +35,6 @@ commands = {
     # http://vim.wikia.com/wiki/Timer_to_execute_commands_periodically
     # Set to low values to improve responsiveness
     "set_updatetime": "set updatetime=1000",
-    "current_line": "getline('.')",
-    "all_text": 'join(getline(1, "$"), "\n")',
     "current_file": "expand('%:p')",
     "until_last_char_word": "normal e",
     "until_first_char_word": "normal b",
@@ -51,7 +50,7 @@ commands = {
     "split_window": "split {}",
     "doautocmd_bufleave": "doautocmd BufLeave",
     "doautocmd_bufreadenter": "doautocmd BufRead,BufEnter",
-    "commands": "&filetype",
+    "filetype": "&filetype",
     "go_to_char": "goto {}",
     "set_ensime_completion": "set omnifunc=EnCompleteFunc",
 }
@@ -97,10 +96,11 @@ class EnsimeClient(object):
 
         self.matches = []
         self.errors = []
-        self.suggestions = None
-        self.en_format_source_id = None
         self.queue = Queue()
-        self.complete_timeout = 20
+        self.suggestions = None
+        self.completion_timeout = 10 #seconds
+        self.completion_started = False
+        self.en_format_source_id = None
         self.enable_fulltype = False
         self.enable_teardown = True
         self.connection_attempts = 0
@@ -258,16 +258,17 @@ class EnsimeClient(object):
             self.vim.command(cmd)
 
     def get_position(self, row, col):
-        """Get total char position from row and column."""
-        result = col - 1
-        with open(self.path(), "r") as f:
-            lines_len = [len(f.readline()) for i in range(row - 1)]
-            result += sum(lines_len)
+        """Get char position in all the text from row and column."""
+        result = col
+        self.log("{} {}".format(row, col))
+        lines = self.vim.current.buffer[:row - 1]
+        result += sum([len(l) + 1 for l in lines])
+        self.log("{}".format(result))
         return result
 
     def get_file_content(self):
-        """Get all the content of the current buffer."""
-        return self.vim_eval("all_text")
+        """Get content of file."""
+        return "\n".join(self.vim.current.buffer)
 
     def get_file_info(self):
         """Returns filename and content of a file."""
@@ -462,9 +463,8 @@ class EnsimeClient(object):
         to_json = json.dumps(frames, indent=2).split("\n")
         self.vim.current.buffer[:] = to_json
 
-    def complete(self):
+    def complete(self, row, col):
         self.log("complete: in")
-        row, col = self.cursor()[0], self.cursor()[1]
         pos = self.get_position(row, col)
         self.send_request({"point": pos, "maxResults":100,
             "typehint":"CompletionsReq",
@@ -659,7 +659,7 @@ class EnsimeClient(object):
         types = [", ".join(p) for p in tparams]
         return "[{}]".format(types)
 
-    def completion_to_menu(self, completion):
+    def formatted_completion_type(self, completion):
         f_result = completion["typeSig"]["result"]
         if not completion["isCallable"]:
             # It's a raw type
@@ -673,8 +673,8 @@ class EnsimeClient(object):
     def completion_to_suggest(self, completion):
         """Convert from a completion to a suggestion."""
         res = {"word": completion["name"],
-               "menu": self.completion_to_menu(completion),
-               "kind": "f" if completion["isCallable"] else "v"}
+               "menu": "[scala]",
+               "kind": self.formatted_completion_type(completion)}
         self.log("completion_to_suggest: {}".format(res))
         return res
 
@@ -710,23 +710,36 @@ class EnsimeClient(object):
             "files" : [self.path()]})
         self.clean_errors()
 
-    def unqueue(self, filename):
+    def unqueue(self, filename, timeout=10):
         """Unqueue all the received ensime responses for a given file."""
         def trigger_callbacks(_json):
             for name in self.receive_callbacks:
                 self.log("launching callback: {}".format(name))
                 self.receive_callbacks[name](self, _json["payload"])
 
-        while not self.queue.empty():
+        start, now = time.time(), time.time()
+        while not self.queue.empty() and (now - start) < timeout:
             result = self.queue.get(False)
             self.log("unqueue: result received {}".format(str(result)))
             if result and result != "nil":
+                # Restart timeout
+                start, now = time.time(), time.time()
                 _json = json.loads(result)
                 # Watch out, it may not have callId
                 call_id = _json.get("callId")
                 if _json["payload"]:
                     trigger_callbacks(_json)
                     self.handle_incoming_response(call_id, _json["payload"])
+            else:
+                self.log("unqueue: nil or None received")
+
+            # Reasonable wait for IO
+            time.sleep(0.25)
+            now = time.time()
+
+        if (now - start) >= timeout:
+            self.log("unqueue: no reply from server for {}s"\
+                    .format(timeout))
 
     def unqueue_and_display(self, filename):
         """Unqueue messages and give feedback to user (if necessary)."""
@@ -777,30 +790,42 @@ class EnsimeClient(object):
         return None
 
     def complete_func(self, findstart, base):
-        """Handle completion."""
-        self.log("complete_func: in {} {}".format(findstart, base))
-        if str(findstart) == '1':
-            self.complete()
-            line = self.vim_eval("current_line")
-            col = self.cursor()[1]
+        """Handle omni completion."""
+        def detect_row_column_start():
+            row, col = self.cursor()
             start = col
-            pattern = re.compile(r'\b')
-            while start > 0 and pattern.match(line[start - 1]):
-                start -= 1
-            return min(start, col)
+            line = self.vim.current.line
+            # No completion from empty string
+            if start != 0 and line[start - 1] == " ":
+                start = -1
+            else:
+                while start > 0 and line[start - 1] != " ":
+                    start -= 1
+            return row, col, start + 1 # pos in no empty str
+
+        self.log("complete_func: in {} {}".format(findstart, base))
+        if str(findstart) == "1":
+            row, col, startcol = detect_row_column_start()
+            if startcol != -1:
+                self.vim_command("write_file")
+                # Make request to get response ASAP
+                self.complete(row, col)
+                self.completion_started = True
+            return col
         else:
-            start = time.time()
-            diff = time.time() - start
-            while diff < self.complete_timeout and self.suggestions:
-                self.unqueue("")
             result = []
-            if self.suggestions:
+            # Only handle snd invocation if fst has already been done
+            if self.completion_started:
+                self.vim_command("until_first_char_word")
+                # Unqueing messages until we get suggestions
+                self.unqueue("", timeout=self.completion_timeout)
+                suggestions = self.suggestions or []
                 self.log("complete_func: suggests in {}"\
-                        .format(self.suggestions))
-                pattern = re.compile('^' + base)
-                for m in self.suggestions:
+                        .format(suggestions))
+                for m in suggestions:
                     result.append(m)
                 self.suggestions = None
+                self.completion_started = False
             return result
 
 
@@ -1003,15 +1028,18 @@ class Ensime(object):
         client.on_cursor_move(filename)
 
     @execute_with_client()
-    def fun_en_complete_func(self, client, findstart, base = None):
-        """Invokable function from vim to perform completion."""
-        if not base:
-            base = findstart[1]
-            findstart = findstart[0]
-        completions = []
+    def fun_en_complete_func(self, client, findstart_and_base, base=None):
+        """Invokable function from vim and neovim to perform completion."""
         if self.is_scala_file():
-            client.complete_func(findstart, base)
-        return completions
+            client.log("{} {}".format(findstart_and_base, base))
+            if not base:
+                # Invoked by vim
+                findstart = findstart_and_base
+            else:
+                # Invoked by neovim
+                findstart = findstart_and_base[0]
+                base = findstart_and_base[1]
+            return client.complete_func(findstart, base)
 
     @execute_with_client()
     def on_receive(self, client, name, callback):

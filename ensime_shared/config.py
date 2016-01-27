@@ -14,7 +14,7 @@ feedback = {
     "notify_break": "Execution breaked at {} {}",
     "displayed_type": "The type {} has been displayed",
     "failed_refactoring": "The refactoring could not be applied (more info at logs)",
-    "unhandled_response": "Response {} has not been unhandled",
+    "unhandled_response": "Response {} has not been handled",
     "spawned_browser": "Opened tab {}",
     "manual_doc": "Go to {}"
 }
