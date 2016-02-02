@@ -13,7 +13,7 @@ becoming your go-to option to easily edit your source code in an efficient and f
 ![First demo](doc/ensime-vim.gif)
 ![Second demo](doc/ensime-vim2.gif)
 
-# How to get to heaven!
+# How to install
   
 Just follow the next steps and you'll be able to get `ensime-vim` in your vim in the blink of an eye.
   
@@ -27,7 +27,7 @@ Then, export your `$BROWSER` variable, for example in your `.bashrc`:
     $ export BROWSER=firefox
 
 *If this variable is pointing to a script, make sure the shebang line (`#!/bin/bash` or whatever) 
-is on top of the file to be executed properly.*
+is on top of the file. Otherwise, it won't be executed.*
 
 You also need the [ensime-sbt](https://github.com/ensime/ensime-sbt) plugin. You can
 install it with a pretty one-liner (make sure `0.3.2` is the latest released version):
