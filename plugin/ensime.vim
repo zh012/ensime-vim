@@ -3,7 +3,8 @@ if has('nvim')
 endif
 augroup ensime
     autocmd!
-    autocmd VimLeave *.scala call ensime#au_vimleave(expand("<afile>"))
+    autocmd VimLeave *.scala call ensime#au_vim_leave(expand("<afile>"))
+    autocmd VimEnter *.scala call ensime#au_vim_enter(expand("<afile>"))
     autocmd BufEnter *.scala call ensime#au_buf_enter(expand("<afile>"))
     autocmd BufLeave *.scala call ensime#au_buf_leave(expand("<afile>"))
     autocmd BufWritePost *.scala call ensime#au_buf_write_post(expand("<afile>"))
@@ -18,6 +19,7 @@ command! -nargs=* -range EnFormatSource call ensime#com_en_format_source([<f-arg
 command! -nargs=* -range EnDeclaration call ensime#com_en_declaration([<f-args>], '')
 command! -nargs=* -range EnDeclarationSplit call ensime#com_en_declaration_split([<f-args>], '')
 command! -nargs=* -range EnSymbol call ensime#com_en_symbol([<f-args>], '')
+command! -nargs=* -range EnRename call ensime#com_en_rename([<f-args>], '')
 command! -nargs=* -range EnInspectType call ensime#com_en_inspect_type([<f-args>], '')
 command! -nargs=* -range EnDocUri call ensime#com_en_doc_uri([<f-args>], '')
 command! -nargs=* -range EnDocBrowse call ensime#com_en_doc_browse([<f-args>], '')
@@ -29,6 +31,7 @@ command! -nargs=* -range EnClasspath call ensime#com_en_classpath([<f-args>], ''
 command! -nargs=* -range EnContinue call ensime#com_en_debug_continue([<f-args>], '')
 command! -nargs=* -range EnBacktrace call ensime#com_en_backtrace([<f-args>], '')
 command! -nargs=0 -range EnClients call ensime#com_en_clients([<f-args>], '')
+command! -nargs=* -range EnToggleFullType call ensime#com_en_toggle_fulltype([<f-args>], '')
 
 function! EnCompleteFunc(a, b) abort
     return ensime#fun_en_complete_func(a:a, a:b)

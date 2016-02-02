@@ -26,10 +26,6 @@ function! ensime#find_config_path(path) abort
     return s:call_plugin('find_config_path', [a:path])
 endfunction
 
-function! ensime#with_current_client(proc, create, quiet, allow_classpath_file_creation) abort
-    return s:call_plugin('with_current_client', [a:proc, a:create, a:quiet, a:allow_classpath_file_creation])
-endfunction
-
 function! ensime#is_scala_file() abort
     return s:call_plugin('is_scala_file', [])
 endfunction
@@ -46,8 +42,12 @@ function! ensime#fun_en_complete_func(findstart, base) abort
     return s:call_plugin('fun_en_complete_func', [a:findstart, a:base])
 endfunction
 
-function! ensime#au_vimleave(filename) abort
-    return s:call_plugin('au_vimleave', [a:filename])
+function! ensime#au_vim_leave(filename) abort
+    return s:call_plugin('au_vim_leave', [a:filename])
+endfunction
+
+function! ensime#au_vim_enter(filename) abort
+    return s:call_plugin('au_vim_enter', [a:filename])
 endfunction
 
 function! ensime#au_buf_enter(filename) abort
@@ -82,6 +82,10 @@ function! ensime#com_en_type(args, range) abort
     return s:call_plugin('com_en_type', [a:args, a:range])
 endfunction
 
+function! ensime#com_en_toggle_fulltype(args, range) abort
+    return s:call_plugin('com_en_toggle_fulltype', [a:args, a:range])
+endfunction
+
 function! ensime#com_en_format_source(args, range) abort
     return s:call_plugin('com_en_format_source', [a:args, a:range])
 endfunction
@@ -96,6 +100,10 @@ endfunction
 
 function! ensime#com_en_symbol(args, range) abort
     return s:call_plugin('com_en_symbol', [a:args, a:range])
+endfunction
+
+function! ensime#com_en_rename(args, range) abort
+    return s:call_plugin('com_en_rename', [a:args, a:range])
 endfunction
 
 function! ensime#com_en_inspect_type(args, range) abort

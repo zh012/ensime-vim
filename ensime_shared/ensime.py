@@ -1,0 +1,1050 @@
+import sys
+import os
+import inspect
+
+# Ensime shared imports
+from ensime_shared.error import Error
+from ensime_shared.util import catch, module_exists, Util
+from ensime_shared.launcher import EnsimeLauncher
+from ensime_shared.config import gconfig, feedback
+
+from threading import Thread
+from subprocess import Popen, PIPE
+
+import neovim
+import json
+import os
+import re
+import logging
+import time
+import datetime
+import inspect
+import unicodedata
+
+# Queue depends on python version
+if sys.version_info > (3, 0):
+    from queue import Queue
+else:
+    from Queue import Queue
+
+commands = {
+    "enerror_matcher": "matchadd(g:EnErrorStyle, '\\%{}l\\%>{}c\\%<{}c')",
+    "highlight_enerror": "highlight EnError ctermbg=red gui=underline",
+    "exists_enerrorstyle": "exists(\"g:EnErrorStyle\")",
+    "set_enerrorstyle": "let g:EnErrorStyle='EnError'",
+    # http://vim.wikia.com/wiki/Timer_to_execute_commands_periodically
+    # Set to low values to improve responsiveness
+    "set_updatetime": "set updatetime=1000",
+    "current_file": "expand('%:p')",
+    "until_last_char_word": "normal e",
+    "until_first_char_word": "normal b",
+    # Avoid to trigger requests to server when writing
+    "write_file": "noautocmd w",
+    "input_save": "call inputsave()",
+    "input_restore": "call inputrestore()",
+    "set_input": "let user_input = input('{}')",
+    "get_input": "user_input",
+    "edit_file": "edit {}",
+    "reload_file": "checktime",
+    "display_message": "echo \"{}\"",
+    "split_window": "split {}",
+    "doautocmd_bufleave": "doautocmd BufLeave",
+    "doautocmd_bufreadenter": "doautocmd BufRead,BufEnter",
+    "filetype": "&filetype",
+    "go_to_char": "goto {}",
+    "set_ensime_completion": "set omnifunc=EnCompleteFunc",
+}
+
+
+class EnsimeClient(object):
+    """Represents an Ensime client per ensime configuration path."""
+
+    def __init__(self, vim, launcher, config_path):
+        def setup_neovim():
+            """Set up neovim and execute global commands."""
+            self.vim = vim
+            self.vim_command("highlight_enerror")
+            if not self.vim_eval("exists_enerrorstyle"):
+                self.vim_command("set_enerrorstyle")
+            self.vim_command("set_updatetime")
+            self.vim_command("set_ensime_completion")
+
+        def setup_logger_and_paths():
+            """Set up paths and logger."""
+            osp = os.path
+            self.config_path = osp.abspath(config_path)
+            config_dirname = osp.dirname(self.config_path)
+            self.ensime_cache = osp.join(config_dirname, ".ensime_cache")
+            self.log_dir = self.ensime_cache \
+                    if osp.isdir(self.ensime_cache) else "/tmp/"
+            self.log_file = os.path.join(self.log_dir, "ensime-vim.log")
+
+        setup_logger_and_paths()
+        setup_neovim()
+        self.log("__init__: in")
+
+        self.ws = None
+        self.ensime = None
+        self.launcher = launcher
+        self.ensime_server = None
+
+        self.call_id = 0
+        self.call_options = {}
+        self.refactor_id = 1
+        self.refactorings = {}
+        self.receive_callbacks = {}
+
+        self.matches = []
+        self.errors = []
+        self.queue = Queue()
+        self.suggestions = None
+        self.completion_timeout = 10 #seconds
+        self.completion_started = False
+        self.en_format_source_id = None
+        self.enable_fulltype = False
+        self.enable_teardown = True
+        self.connection_attempts = 0
+        self.tmp_diff_folder = "/tmp/ensime-vim/diffs/"
+        Util.mkdir_p(self.tmp_diff_folder)
+
+        self.debug_thread_id = None
+        self.running = True
+        Thread(target=self.queue_poll, args=()).start()
+
+        self.handlers = {}
+        self.register_responses_handlers()
+
+        self.websocket_exists = module_exists("websocket")
+        if not self.websocket_exists:
+            self.tell_module_missing("websocket-client")
+
+    def log(self, what):
+        """Log `what` in a file at the .ensime_cache folder or /tmp."""
+        with open(self.log_file, "a") as f:
+            now = datetime.datetime.now()
+            tm = now.strftime("%Y-%m-%d %H:%M:%S.%f")
+            f.write("{}: {}\n".format(tm, what))
+
+    def queue_poll(self, sleep_t = 0.5):
+        """Put new messages on the queue as they arrive. Blocking in a thread.
+
+        Value of sleep is low to improve responsiveness.
+        """
+        while self.running:
+            if self.ws:
+                result = self.ws.recv()
+                self.queue.put(result)
+            time.sleep(sleep_t)
+
+    def on_receive(self, name, callback):
+        """Executed when a response is received from the server."""
+        self.log("on_receive: {}".format(callback))
+        self.receive_callbacks[name] = callback
+
+    def vim_command(self, key):
+        """Execute a vim cached command from the commands dictionary."""
+        vim_cmd = commands[key]
+        self.vim.command(vim_cmd)
+
+    def vim_eval(self, key):
+        """Eval a vim cached expression from the commands dictionary."""
+        vim_cmd = commands[key]
+        return self.vim.eval(vim_cmd)
+
+    def setup(self, quiet = False, create_classpath = False):
+        """Check the classpath and connect to the server if necessary."""
+        def lazy_initialize_ensime():
+            if not self.ensime:
+                called_by = inspect.stack()[4][3]
+                self.log(str(inspect.stack()))
+                self.log("setup({}, {}) called by {}()"\
+                        .format(quiet, create_classpath, called_by))
+                no_classpath = self.launcher.no_classpath_file(self.config_path)
+                if not create_classpath and no_classpath:
+                    if not quiet:
+                        self.message("warn_classpath")
+                    return False
+                self.ensime = self.launcher.launch(self.config_path)
+            return True
+
+        def ready_to_connect():
+            if not self.websocket_exists:
+                return False
+            if not self.ws and self.ensime.is_ready():
+                self.connect_ensime_server()
+            return True
+
+        # True if ensime is up and connection is ok, otherwise False
+        return lazy_initialize_ensime() and ready_to_connect()
+
+    def tell_module_missing(self, name):
+        msg = feedback["module_missing"]
+        self.raw_message(msg.format(name, name))
+
+    def send(self, msg):
+        """Send something to the ensime server."""
+        def reconnect(e):
+            self.log("send error: {}, reconnecting...".format(e))
+            self.connect_ensime_server()
+            self.ws.send(msg + "\n")
+
+        self.log("send: in")
+        if self.ws:
+            with catch(Exception, reconnect):
+                self.log("send: {}".format(msg))
+                self.ws.send(msg + "\n")
+
+    def connect_ensime_server(self):
+        """Start initial connection with the server."""
+        if not self.ensime_server:
+            port = self.ensime.http_port()
+            self.ensime_server = gconfig["ensime_server"].format(port)
+        from websocket import create_connection
+        self.ws = create_connection(self.ensime_server)
+        self.send_request({"typehint":"ConnectionInfoReq"})
+
+    def teardown(self, filename):
+        """Tear down the server or keep it alive."""
+        self.log("teardown: in")
+        if self.ensime and self.enable_teardown:
+            self.ensime.stop()
+
+    def cursor(self):
+        """Return the row and col of the current buffer."""
+        return self.vim.current.window.cursor
+
+    def set_cursor(self, row, col):
+        """Set cursor at a given row and col in a buffer."""
+        self.log("set_cursor: {}".format((row, col)))
+        self.vim.current.window.cursor = (row, col)
+
+    def set_cursor(self, char_counter):
+        """Set cursor at nth char in a buffer."""
+        self.log("set_cursor: {}".format((row, col)))
+        cmd = commands["go_to_char"].format(char_counter + 1)
+        self.vim.command(cmd)
+
+    def width(self):
+        """Return the width of the window."""
+        return self.vim.current.window.width
+
+    def path(self):
+        """Return the current path."""
+        self.log("path: in")
+        return self.vim.current.buffer.name
+
+    def start_end_pos(self):
+        """Return start and end positions of the cursor respectively."""
+        self.vim_command("until_last_char_word")
+        e = self.cursor()
+        self.vim_command("until_first_char_word")
+        b = self.cursor()
+        return b, e
+
+    def send_at_position(self, what, where = "range"):
+        self.log("send_at_position: in")
+        b, e = self.start_end_pos()
+        bcol, ecol = b[1], e[1]
+        s, line = ecol - bcol, b[0]
+        self.send_at_point_req(what, self.path(), line, bcol + 1, s, where)
+
+    def set_position(self, decl_pos):
+        """Set position from declPos data."""
+        if decl_pos["typehint"] == "LineSourcePosition":
+            self.set_cursor(decl_pos['line'], 0)
+        else: # OffsetSourcePosition
+            point = decl_pos["offset"]
+            cmd = commands["go_to_char"].format(str(point + 1))
+            self.vim.command(cmd)
+
+    def get_position(self, row, col):
+        """Get char position in all the text from row and column."""
+        result = col
+        self.log("{} {}".format(row, col))
+        lines = self.vim.current.buffer[:row - 1]
+        result += sum([len(l) + 1 for l in lines])
+        self.log("{}".format(result))
+        return result
+
+    def get_file_content(self):
+        """Get content of file."""
+        return "\n".join(self.vim.current.buffer)
+
+    def get_file_info(self):
+        """Returns filename and content of a file."""
+        return {"file": self.path(),
+                "contents": self.get_file_content()}
+
+    def ask_input(self, message = 'input: '):
+        """Ask input to vim and display info string."""
+        self.vim_command("input_save")
+        # Format to display message with input()
+        cmd = commands["set_input"]
+        self.vim.command(cmd.format(message))
+        self.vim_command("input_restore")
+        return self.vim_eval("get_input")
+
+    def raw_message(self, m):
+        """Display a message in the vim status line."""
+        self.log("message: in")
+        self.log(m)
+        cmd = commands["display_message"]
+        escaped = m.replace('"', '\\"')
+        self.vim.command(cmd.format(escaped))
+
+    def message(self, key):
+        """Display a message already defined in `feedback`."""
+        msg = feedback[key]
+        self.raw_message(msg)
+
+    def register_responses_handlers(self):
+        """Register handlers for responses from the server.
+
+        A handler must accept only one parameter: `payload`.
+        """
+        self.handlers["SymbolInfo"] = self.handle_symbol_info
+        f_indexer = lambda ci, p: self.message("indexer_ready")
+        self.handlers["IndexerReadyEvent"] = f_indexer
+        f_indexer = lambda ci, p: self.message("analyzer_ready")
+        self.handlers["AnalyzerReadyEvent"] = f_indexer
+        self.handlers["NewScalaNotesEvent"] = self.handle_new_scala_notes_event
+        self.handlers["BasicTypeInfo"] = self.show_type
+        self.handlers["ArrowTypeInfo"] = self.show_ftype
+        self.handlers["StringResponse"] = self.handle_string_response
+        self.handlers["CompletionInfoList"] = self.handle_completion_info_list
+        self.handlers["TypeInspectInfo"] = self.handle_type_inspect
+        self.handlers["DebugOutputEvent"] = self.handle_debug_output
+        self.handlers["DebugBreakEvent"] = self.handle_debug_break
+        self.handlers["DebugBacktrace"] = self.handle_debug_backtrace
+        self.handlers["RefactorDiffEffect"] = self.apply_refactor
+
+    def handle_symbol_info(self, call_id, payload):
+        """Handler for response `SymbolInfo`."""
+        warn = lambda e: self.message("unknown_symbol")
+        with catch(KeyError, warn):
+            decl_pos = payload["declPos"]
+            open_definition = self.call_options[call_id].get("open_definition")
+            if open_definition:
+                self.clean_errors()
+                self.vim_command("doautocmd_bufleave")
+                split = self.call_options[call_id].get("split")
+                key = "split_window" if split else "edit_file"
+                self.vim.command(commands[key].format(decl_pos["file"]))
+                self.vim_command("doautocmd_bufreadenter")
+                self.set_position(decl_pos)
+                del self.call_options[call_id]
+
+    def handle_new_scala_notes_event(self, call_id, payload):
+        """Handler for response `NewScalaNotesEvent`."""
+        for note in payload["notes"]:
+            l = note["line"]
+            c = note["col"] - 1
+            e = note["col"] + (note["end"] - note["beg"] + 1)
+
+            current_file = self.path()
+            if os.path.abspath(current_file) == os.path.abspath(note["file"]):
+                self.errors.append(Error(note["file"], note["msg"], l, c, e))
+                matcher = commands["enerror_matcher"].format(l,c,e)
+                match = self.vim.eval(matcher)
+                add_match_msg = "adding match {} at line {} column {} error {}"
+                self.log(add_match_msg.format(match, l, c, e))
+                self.matches.append(match)
+
+    def handle_string_response(self, call_id, payload):
+        """Handler for response `StringResponse`.
+
+        This is the response for the following requests:
+          1. `DocUriAtPointReq` or `DocUriForSymbolReq`
+          2. `DebugToStringReq`
+          3. `FormatOneSourceReq`
+        """
+        self.log(str(payload))
+        self.handle_doc_uri(call_id, payload)
+
+    def handle_doc_uri(self, call_id, payload):
+        """Handler for responses of Doc URIs."""
+        def open_url_browser(url, browser):
+            # If $BROWSER points to a script make 
+            # sure that the shebang line is on the top
+            # Cannot block here with a wait() to check success
+            Popen([browser, url], stdout=PIPE, stderr=PIPE)
+            self.log("{} opened {}".format(browser, url))
+
+        if not self.en_format_source_id:
+            self.log("handle_string_response: received doc path")
+            port = self.ensime.http_port()
+            url = gconfig["localhost"].format(port, payload["text"])
+            browse_enabled = self.call_options[call_id].get("browse")
+
+            if browse_enabled:
+                log_msg = "handle_string_response: browsing doc path {}"
+                self.log(log_msg.format(url))
+                browser = os.environ.get("BROWSER")
+                if browser:
+                    open_url_browser(url, browser)
+                    prefix_msg = feedback["spawned_browser"]
+                else:
+                    prefix_msg = feedback["manual_doc"]
+                    self.log("handle_string_response: $BROWSER is not set")
+
+            del self.call_options[call_id]
+            self.raw_message(prefix_msg.format(url))
+        else:
+            self.vim.current.buffer[:] = \
+                [line.encode('utf-8') for line in payload["text"].split("\n")]
+            self.en_format_source_id = None
+
+    def handle_completion_info_list(self, call_id, payload):
+        """Handler for a completion response."""
+        completions = payload["completions"]
+        self.log("handle_completion_info_list: in")
+        self.suggestions = [self.completion_to_suggest(c) for c in completions]
+        self.log("handle_completion_info_list: {}".format(self.suggestions))
+
+    def handle_type_inspect(self, call_id, payload):
+        """Handler for responses `TypeInspectInfo`."""
+        self.raw_message(payload["type"]["fullName"])
+
+    def show_type(self, call_id, payload):
+        """Show type of a variable or scala type."""
+        tpe = payload["fullName"]
+        args = payload["typeArgs"]
+
+        if args:
+            tpes = [x["name"] for x in args]
+            tpe += self.concat_tparams(tpes)
+
+        self.log(feedback["displayed_type"].format(tpe))
+        self.raw_message(tpe)
+
+    def show_ftype(self, call_id, payload):
+        """Show the type of a function."""
+        self.log("entering")
+        rtype = payload["resultType"]
+        lparams = payload["paramSections"]
+        tpe = ""
+        tname = "fullName" if self.enable_fulltype else "name"
+
+        if rtype and lparams:
+            for l in lparams:
+                tpe += "("
+                f = lambda x: (x[0], x[1][tname])
+                params = list(map(f, l["params"]))
+                tpe += self.concat_params(params)
+                tpe += ")"
+            tpe += " => {}".format(rtype["fullName"])
+
+        self.log(feedback["displayed_type"].format(tpe))
+        self.raw_message(tpe)
+
+    def handle_incoming_response(self, call_id, payload):
+        """Get a registered handler for a given response and execute it."""
+        self.log("handle_incoming_response: in {}".format(payload))
+        typehint = payload["typehint"]
+        handler = self.handlers.get(typehint)
+        if handler:
+            handler(call_id, payload)
+        else:
+            self.log(feedback["unhandled_response"].format(payload))
+    def handle_debug_output(self, call_id, payload):
+        """Handle responses `DebugOutputEvent`."""
+        self.raw_message(payload["body"].encode("ascii","ignore"))
+
+    def handle_debug_break(self, call_id, payload):
+        """Handle responses `DebugBreakEvent`."""
+        f, l = payload["file"], payload["line"]
+        self.raw_message(feedback["notify_break"])
+        self.debug_thread_id = payload["threadId"]
+
+    def handle_debug_backtrace(self, call_id, payload):
+        """Handle responses `DebugBacktrace`."""
+        frames = payload["frames"]
+        self.vim.command(":split backtrace.json")
+        to_json = json.dumps(frames, indent=2).split("\n")
+        self.vim.current.buffer[:] = to_json
+
+    def complete(self, row, col):
+        self.log("complete: in")
+        pos = self.get_position(row, col)
+        self.send_request({"point": pos, "maxResults":100,
+            "typehint":"CompletionsReq",
+            "caseSens":True,
+            "fileInfo": self.get_file_info(),
+            "reload":False})
+
+    def send_at_point_req(self, what, path, row, col, size, where = "range"):
+        """Ask the server to perform an operation at a given position."""
+        i = self.get_position(row, col)
+        self.send_request(
+            {"typehint" : what + "AtPointReq",
+            "file" : path,
+            where : {"from": i,"to": i + size}})
+
+    def do_toggle_teardown(self, args, range = None):
+        self.log("do_toggle_teardown: in")
+        self.toggle_teardown = not self.toggle_teardown
+
+    def type_check_cmd(self, args, range = None):
+        self.log("type_check_cmd: in")
+        self.type_check("")
+
+    def en_classpath(self, args, range = None):
+        self.log("en_classpath: in")
+
+    def format_source(self, args, range = None):
+        self.log("type_check_cmd: in")
+        req = {"typehint": "FormatOneSourceReq",
+               "file": self.get_file_info()}
+        self.en_format_source_id = self.send_request(req)
+
+    def type(self, args, range = None):
+        self.log("type: in")
+        self.send_at_position("Type")
+
+    def toggle_fulltype(self, args, range = None):
+        self.log("toggle_fulltype: in")
+        self.enable_fulltype = not self.enable_fulltype
+
+    def symbol_at_point_req(self, open_definition):
+        self.call_options[self.call_id] = {"open_definition": open_definition}
+        pos = self.get_position(self.cursor()[0], self.cursor()[1])
+        self.send_request({
+            "point": pos+1,
+            "typehint":"SymbolAtPointReq",
+            "file":self.path()})
+
+    def open_declaration(self, args, range = None):
+        self.log("open_declaration: in")
+        self.symbol_at_point_req(True)
+
+    def open_declaration_split(self, args, range = None):
+        self.log("open_declaration: in")
+        self.call_options[self.call_id] = {"split": True}
+        self.symbol_at_point_req(True)
+
+    def symbol(self, args, range = None):
+        self.log("symbol: in")
+        self.symbol_at_point_req(False)
+
+    def suggest_import(self, args, range = None):
+        self.log("inspect_type: in")
+        pos = self.get_position(self.cursor()[0], self.cursor()[1])
+        req = {"point": pos,
+               "maxResults":10,
+               "names": ["CacheBuilder"],
+               "typehint": "ImportSuggestionsReq",
+               "file": self.path()}
+        self.send_request(req)
+
+    def set_break(self, args, range = None):
+        self.log("set_break: in")
+        req = {"line": self.cursor()[0],
+               "maxResults":10,
+               "typehint": "DebugSetBreakReq",
+               "file": self.path()}
+        self.send_request(req)
+
+    def clear_breaks(self, args, range = None):
+        self.log("clear_breaks: in")
+        self.send_request({"typehint": "DebugClearAllBreakReq"})
+
+    def debug_start(self, args, range = None):
+        self.log("debug_start: in")
+        if len(args) > 0:
+            self.send_request({
+                "typehint": "DebugStartReq",
+                "commandLine": args[0]})
+        else:
+            self.message("missing_debug_class")
+
+    def debug_continue(self, args, range = None):
+        self.log("debug_start: in")
+        self.send_request({
+            "typehint": "DebugContinueReq",
+            "threadId": self.debug_thread_id})
+
+    def backtrace(self, args, range = None):
+        self.log("backtrace: in")
+        self.send_request({
+            "typehint": "DebugBacktraceReq",
+            "threadId": self.debug_thread_id,
+            "index":0, "count":100})
+
+    def inspect_type(self, args, range = None):
+        self.log("inspect_type: in")
+        pos = self.get_position(self.cursor()[0], self.cursor()[1])
+        self.send_request({
+            "point": pos,
+            "typehint": "InspectTypeAtPointReq",
+            "file": self.path(),
+            "range": {"from": pos, "to": pos}})
+
+    def doc_uri(self, args, range = None):
+        """Request doc of whatever at cursor."""
+        self.log("doc_uri: in")
+        self.send_at_position("DocUri", "point")
+
+    def doc_browse(self, args, range = None) :
+        """Browse doc of whatever at cursor."""
+        self.log("browse: in")
+        self.call_options[self.call_id] = {"browse": True}
+        self.doc_uri(args, range = None)
+
+    def rename(self, new_name, range = None):
+        """Request a rename to the server."""
+        self.log("rename: in")
+        if not new_name:
+            new_name = self.ask_input("Rename to: ")
+        self.vim_command("write_file")
+        b, e = self.start_end_pos()
+        current_file = self.path()
+        self.raw_message(current_file)
+        self.send_refactor_request(
+            "RefactorReq",
+            {
+                "typehint": "RenameRefactorDesc",
+                "newName": new_name,
+                "start": self.get_position(b[0], b[1]),
+                "end": self.get_position(e[0], e[1]) + 1,
+                "file": current_file,
+            },
+            { "interactive": False }
+        )
+
+    def send_refactor_request(self, ref_type, ref_params, ref_options):
+        """Send a refactor request to the Ensime server.
+
+        The `ref_params` field will always have a field `type`.
+        """
+        request = {
+            "typehint": ref_type,
+            "procId": self.refactor_id,
+            "params": ref_params
+        }
+        f = ref_params["file"]
+        self.refactorings[self.refactor_id] = f
+        self.refactor_id += 1
+        request.update(ref_options)
+        self.send_request(request)
+
+    def apply_refactor(self, call_id, payload):
+        """Apply a refactor depending on its type."""
+        refactor_id = payload["procedureId"]
+        current_file = self.refactorings.get(refactor_id)
+
+        if payload["refactorType"]["typehint"] == "Rename":
+            diff_filepath = payload["diff"]
+            path = self.path()
+            bname = os.path.basename(path)
+            target = os.path.join(self.tmp_diff_folder, bname)
+            reject_arg = "--reject-file={}.rej".format(target)
+            backup_pref = "--prefix={}".format(self.tmp_diff_folder)
+            # Patch utility is prepackaged or installed with vim
+            cmd = ["patch", reject_arg, backup_pref, path, diff_filepath]
+            failed = Popen(cmd, stdout=PIPE, stderr=PIPE).wait()
+            if failed:
+                self.message("failed_refactoring")
+            # Update file and reload highlighting
+            cmd = commands["edit_file"].format(self.path())
+            self.vim.command(cmd)
+            self.vim_command("doautocmd_bufreadenter")
+
+    def concat_params(self, params):
+        """Return list of params from list of (pname, ptype)."""
+        name_and_types = [": ".join(p) for p in params]
+        return ", ".join(name_and_types)
+
+    def concat_tparams(self, tparams):
+        """Return a valid signature from a list of type parameters."""
+        types = [", ".join(p) for p in tparams]
+        return "[{}]".format(types)
+
+    def formatted_completion_type(self, completion):
+        f_result = completion["typeSig"]["result"]
+        if not completion["isCallable"]:
+            # It's a raw type
+            return f_result
+
+        # It's a function type
+        f_params = completion["typeSig"]["sections"][0]
+        ps = self.concat_params(f_params) if f_params else ""
+        return "({}) => {}".format(ps, f_result)
+
+    def completion_to_suggest(self, completion):
+        """Convert from a completion to a suggestion."""
+        res = {"word": completion["name"],
+               "menu": "[scala]",
+               "kind": self.formatted_completion_type(completion)}
+        self.log("completion_to_suggest: {}".format(res))
+        return res
+
+    def send_request(self, request):
+        """Send a request to the server."""
+        self.log("send_request: in")
+        self.send(json.dumps({"callId" : self.call_id,"req" : request}))
+        call_id = self.call_id
+        self.call_id += 1
+        return call_id
+
+    def clean_errors(self):
+        """Clean errors and unhighlight them in vim."""
+        self.vim.eval("clearmatches()")
+        self.matches = []
+        self.errors = []
+
+    def buffer_leave(self, filename):
+        """User is changing of buffer."""
+        self.log("buffer_leave: {}".format(filename))
+        self.clean_errors()
+
+    def buffer_enter(self, filename):
+        """User has reopened this buffer."""
+        if self.vim.eval("&mod") == '0':
+            self.type_check(filename)
+
+    def type_check(self, filename):
+        """Update type checking when user saves buffer."""
+        self.log("type_check: in")
+        self.send_request(
+            {"typehint": "TypecheckFilesReq",
+            "files" : [self.path()]})
+        self.clean_errors()
+
+    def unqueue(self, filename, timeout=10):
+        """Unqueue all the received ensime responses for a given file."""
+        def trigger_callbacks(_json):
+            for name in self.receive_callbacks:
+                self.log("launching callback: {}".format(name))
+                self.receive_callbacks[name](self, _json["payload"])
+
+        start, now = time.time(), time.time()
+        while not self.queue.empty() and (now - start) < timeout:
+            result = self.queue.get(False)
+            self.log("unqueue: result received {}".format(str(result)))
+            if result and result != "nil":
+                # Restart timeout
+                start, now = time.time(), time.time()
+                _json = json.loads(result)
+                # Watch out, it may not have callId
+                call_id = _json.get("callId")
+                if _json["payload"]:
+                    trigger_callbacks(_json)
+                    self.handle_incoming_response(call_id, _json["payload"])
+            else:
+                self.log("unqueue: nil or None received")
+
+            # Reasonable wait for IO
+            time.sleep(0.25)
+            now = time.time()
+
+        if (now - start) >= timeout:
+            self.log("unqueue: no reply from server for {}s"\
+                    .format(timeout))
+
+    def unqueue_and_display(self, filename):
+        """Unqueue messages and give feedback to user (if necessary)."""
+        if self.ws:
+            self.lazy_display_error(filename)
+            self.unqueue(filename)
+
+    def lazy_display_error(self, filename):
+        """Display error when user is over it."""
+        error = self.get_error_at(self.cursor())
+        if error:
+            report = error.get_truncated_message(
+                    self.cursor(), self.width() - 1)
+            self.raw_message(report)
+
+    def on_cursor_hold(self, filename):
+        """Handler for event CursorHold."""
+        if self.connection_attempts < 10:
+            # Trick to connect ASAP when 
+            # plugin is  started without 
+            # user interaction (CursorMove)
+            self.setup(True, False)
+            self.connection_attempts += 1
+        self.unqueue_and_display(filename)
+        # Make sure any plugin overrides this
+        self.vim_command("set_updatetime")
+        # Keys with no effect, just retrigger CursorHold
+        self.vim.command("call feedkeys('f\e')")
+
+    def on_cursor_move(self, filename):
+        """Handler for event CursorMoved."""
+        self.setup(True, False)
+        self.unqueue_and_display(filename)
+
+    def vim_enter(self, filename):
+        """Set up EnsimeClient when vim enters.
+
+        This is useful to start the EnsimeLauncher as soon as possible."""
+        success = self.setup(True, False)
+        if success:
+            self.message("start_message")
+
+    def get_error_at(self, cursor):
+        """Return error at position `cursor`."""
+        for error in self.errors:
+            if error.includes(self.vim.eval("expand('%:p')"), cursor):
+                return error
+        return None
+
+    def complete_func(self, findstart, base):
+        """Handle omni completion."""
+        def detect_row_column_start():
+            row, col = self.cursor()
+            start = col
+            line = self.vim.current.line
+            # No completion from empty string
+            if start != 0 and line[start - 1] == " ":
+                start = -1
+            else:
+                while start > 0 and line[start - 1] != " ":
+                    start -= 1
+            return row, col, start + 1 # pos in no empty str
+
+        self.log("complete_func: in {} {}".format(findstart, base))
+        if str(findstart) == "1":
+            row, col, startcol = detect_row_column_start()
+            if startcol != -1:
+                self.vim_command("write_file")
+                # Make request to get response ASAP
+                self.complete(row, col)
+                self.completion_started = True
+            return col
+        else:
+            result = []
+            # Only handle snd invocation if fst has already been done
+            if self.completion_started:
+                self.vim_command("until_first_char_word")
+                # Unqueing messages until we get suggestions
+                self.unqueue("", timeout=self.completion_timeout)
+                suggestions = self.suggestions or []
+                self.log("complete_func: suggests in {}"\
+                        .format(suggestions))
+                for m in suggestions:
+                    result.append(m)
+                self.suggestions = None
+                self.completion_started = False
+            return result
+
+
+def execute_with_client(**kwargs):
+    """Decorator that gets a client and performs an operation on it."""
+    def wrapper(f):
+        # Gets the self reference and pass it
+        def wrapper2(self, *vimargs, **vimkwargs):
+            # By default, set to true if not present
+            if not "create_client" in kwargs:
+                kwargs["create_client"] = True
+            # All the missing parameters in 
+            # kwargs will be False by default
+            client = self.current_client(**kwargs)
+            if client:
+                return f(self, client, *vimargs, **vimkwargs)
+        return wrapper2
+    return wrapper
+
+
+@neovim.plugin
+class Ensime(object):
+    def __init__(self, vim):
+        self.vim = vim
+        # Map ensime configs to a ensime clients
+        self.clients = {}
+        self.launcher = EnsimeLauncher(vim)
+
+    def client_keys(self):
+        return self.clients.keys()
+
+    def client_status(self, config_path):
+        """Get the client status of a given project."""
+        c = self.client_for(config_path, create=True)
+        status = "stopped"
+        if not c or not c.ensime:
+            status = 'unloaded'
+        elif c.ensime.is_ready():
+            status = 'ready'
+        elif c.ensime.is_running():
+            status = 'startup'
+        elif c.ensime.aborted():
+            status = 'aborted'
+        return status
+
+    def teardown(self):
+        """Say goodbye..."""
+        for c in self.clients.values():
+            c.teardown(None)
+
+    def current_client(self, **kwargs):
+        """Return the current client for a given project."""
+        # Use current_file command because we cannot access self.vim
+        current_file_cmd = commands["current_file"]
+        current_file = self.vim.eval(current_file_cmd)
+        config_path = self.find_config_path(current_file)
+        if config_path:
+            return self.client_for(config_path, **kwargs)
+
+    def find_config_path(self, path):
+        """Recursive function that finds the ensime config filepath."""
+        abs_path = os.path.abspath(path)
+        config_path = os.path.join(abs_path, '.ensime')
+
+        if abs_path == os.path.abspath('/'):
+            config_path = None
+        elif not os.path.isfile(config_path):
+            dirname = os.path.dirname(abs_path)
+            config_path = self.find_config_path(dirname)
+
+        return config_path
+
+    def client_for(self, config_path, **kwargs):
+        """Get a cached client for a project, otherwise create one."""
+        client = None
+        create_client = kwargs.get("create_client")
+        abs_path = os.path.abspath(config_path)
+        if abs_path in self.clients:
+            client = self.clients[abs_path]
+        elif create_client:
+            client = EnsimeClient(self.vim, self.launcher, config_path)
+            quiet = kwargs.get("quiet")
+            classpath_creation = kwargs.get("classpath_creation")
+            if client.setup(quiet, classpath_creation):
+                self.clients[abs_path] = client
+        return client
+
+    def is_scala_file(self):
+        cmd = commands["filetype"]
+        return self.vim.eval(cmd) == 'scala'
+
+    @execute_with_client()
+    def com_en_toggle_teardown(self, client, args, range = None):
+        client.do_toggle_teardown(None, None)
+
+    @execute_with_client()
+    def com_en_type_check(self, client, args, range = None):
+        client.type_check_cmd(None)
+
+    @execute_with_client()
+    def com_en_type(self, client, args, range = None):
+        client.type(None)
+
+    @execute_with_client()
+    def com_en_toggle_fulltype(self, client, args, range = None):
+        client.toggle_fulltype(None)
+
+    @execute_with_client()
+    def com_en_format_source(self, client, args, range = None):
+        client.format_source(None)
+
+    @execute_with_client()
+    def com_en_declaration(self, client, args, range = None):
+        client.open_declaration(args, range)
+
+    @execute_with_client()
+    def com_en_declaration_split(self, client, args, range = None):
+        client.open_declaration_split(args, range)
+
+    @execute_with_client()
+    def com_en_symbol(self, client, args, range = None):
+        client.symbol(args, range)
+
+    @execute_with_client()
+    def com_en_inspect_type(self, client, args, range = None):
+        client.inspect_type(args, range)
+
+    @execute_with_client()
+    def com_en_doc_uri(self, client, args, range = None):
+        return client.doc_uri(args, range)
+
+    @execute_with_client()
+    def com_en_doc_browse(self, client, args, range = None):
+        client.doc_browse(args, range)
+
+    @execute_with_client()
+    def com_en_suggest_import(self, client, args, range = None):
+        client.suggest_import(args, range)
+
+    @execute_with_client()
+    def com_en_set_break(self, client, args, range = None):
+        client.set_break(args, range)
+
+    @execute_with_client()
+    def com_en_clear_breaks(self, client, args, range = None):
+        client.clear_breaks(args, range)
+
+    @execute_with_client()
+    def com_en_debug_start(self, client, args, range = None):
+        client.debug_start(args, range)
+
+    @execute_with_client(create_classpath = True)
+    def com_en_classpath(self, client, args, range = None):
+        client.en_classpath(args, range)
+
+    @execute_with_client()
+    def com_en_debug_continue(self, client, args, range = None):
+        client.debug_continue(args, range)
+
+    @execute_with_client()
+    def com_en_backtrace(self, client, args, range = None):
+        client.backtrace(args, range)
+
+    @execute_with_client()
+    def com_en_rename(self, client, args, range = None):
+        client.rename(None)
+
+    @execute_with_client()
+    def com_en_clients(self, client, args, range = None):
+        for path in self.client_keys():
+            status = self.client_status(path)
+            client.raw_message("{}: {}".format(path, status))
+
+    @execute_with_client(quiet = True)
+    def au_vim_enter(self, client, filename):
+        client.vim_enter(filename)
+
+    @execute_with_client()
+    def au_vim_leave(self, client, filename):
+        self.teardown()
+
+    @execute_with_client(quiet = True)
+    def au_buf_enter(self, client, filename):
+        client.buffer_enter(filename)
+
+    @execute_with_client()
+    def au_buf_leave(self, client, filename):
+        client.buffer_leave(filename)
+
+    @execute_with_client()
+    def au_buf_write_post(self, client, filename):
+        client.type_check(filename)
+
+    @execute_with_client()
+    def au_cursor_hold(self, client, filename):
+        client.on_cursor_hold(filename)
+
+    @execute_with_client(quiet = True)
+    def au_cursor_moved(self, client, filename):
+        client.on_cursor_move(filename)
+
+    @execute_with_client()
+    def fun_en_complete_func(self, client, findstart_and_base, base=None):
+        """Invokable function from vim and neovim to perform completion."""
+        if self.is_scala_file():
+            client.log("{} {}".format(findstart_and_base, base))
+            if not base:
+                # Invoked by vim
+                findstart = findstart_and_base
+            else:
+                # Invoked by neovim
+                findstart = findstart_and_base[0]
+                base = findstart_and_base[1]
+            return client.complete_func(findstart, base)
+
+    @execute_with_client()
+    def on_receive(self, client, name, callback):
+        client.on_receive(name, callback)
+
+    @execute_with_client()
+    def send_request(self, client, request):
+        client.send_request(request)

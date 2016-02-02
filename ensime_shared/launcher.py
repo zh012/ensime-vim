@@ -4,27 +4,10 @@ import socket
 import subprocess
 import re
 
-class Util:
-    @staticmethod
-    def read_file(path):
-        f = open(path)
-        result = f.read()
-        f.close()
-        return result
+from ensime_shared.util import Util
+from ensime_shared.config import gconfig, feedback
 
-    @staticmethod
-    def write_file(path, contents):
-        f = open(path, "w")
-        result = f.write(contents)
-        f.close()
-        return result
-
-    @staticmethod
-    def mkdir_p(path):
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-class EnsimeProcess:
+class EnsimeProcess(object):
     def __init__(self, cache_dir, process, log_path, cleanup):
         self.log_path = log_path
         self.cache_dir = cache_dir
@@ -59,8 +42,16 @@ class EnsimeProcess:
     def http_port(self):
         return int(Util.read_file(os.path.join(self.cache_dir, "http")))
 
-class EnsimeLauncher:
-    def __init__(self, vim, base_dir =  os.environ['HOME'] + "/.config/classpath_project_ensime"):
+join = os.path.join
+home = os.environ["HOME"]
+# Use a new path that is clearer and more user-friendly
+_default_base_dir = join(home, ".config/ensime-vim/")
+_old_base_dir = join(home, ".config/classpath_project_ensime")
+if os.path.isdir(_old_base_dir):
+    os.rename(_old_base_dir, _default_base_dir)
+
+class EnsimeLauncher(object):
+    def __init__(self, vim, base_dir = _default_base_dir):
         self.vim = vim
         self.base_dir = os.path.abspath(base_dir)
         self.ensime_version = "0.9.10-SNAPSHOT"
