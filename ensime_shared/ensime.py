@@ -11,7 +11,6 @@ from ensime_shared.config import gconfig, feedback
 from threading import Thread
 from subprocess import Popen, PIPE
 
-import neovim
 import json
 import os
 import re
@@ -28,9 +27,9 @@ else:
     from Queue import Queue
 
 commands = {
-    "enerror_matcher": "matchadd(g:EnErrorStyle, '\\%{}l\\%>{}c\\%<{}c')",
+    "enerror_matcher": "matchadd('g:EnErrorStyle', '\\%{}l\\%>{}c\\%<{}c')",
     "highlight_enerror": "highlight EnError ctermbg=red gui=underline",
-    "exists_enerrorstyle": "exists(\"g:EnErrorStyle\")",
+    "exists_enerrorstyle": "exists('g:EnErrorStyle')",
     "set_enerrorstyle": "let g:EnErrorStyle='EnError'",
     # http://vim.wikia.com/wiki/Timer_to_execute_commands_periodically
     # Set to low values to improve responsiveness
@@ -60,8 +59,8 @@ class EnsimeClient(object):
     """Represents an Ensime client per ensime configuration path."""
 
     def __init__(self, vim, launcher, config_path):
-        def setup_neovim():
-            """Set up neovim and execute global commands."""
+        def setup_vim():
+            """Set up vim and execute global commands."""
             self.vim = vim
             self.vim_command("highlight_enerror")
             if not self.vim_eval("exists_enerrorstyle"):
@@ -80,7 +79,7 @@ class EnsimeClient(object):
             self.log_file = os.path.join(self.log_dir, "ensime-vim.log")
 
         setup_logger_and_paths()
-        setup_neovim()
+        setup_vim()
         self.log("__init__: in")
 
         self.ws = None
@@ -846,7 +845,6 @@ def execute_with_client(**kwargs):
     return wrapper
 
 
-@neovim.plugin
 class Ensime(object):
     def __init__(self, vim):
         self.vim = vim
