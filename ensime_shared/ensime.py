@@ -101,7 +101,7 @@ class EnsimeClient(object):
         self.completion_started = False
         self.en_format_source_id = None
         self.enable_fulltype = False
-        self.enable_teardown = True
+        self.toggle_teardown = True
         self.connection_attempts = 0
         self.tmp_diff_folder = "/tmp/ensime-vim/diffs/"
         Util.mkdir_p(self.tmp_diff_folder)
@@ -131,8 +131,13 @@ class EnsimeClient(object):
         """
         while self.running:
             if self.ws:
-                result = self.ws.recv()
-                self.queue.put(result)
+                def logger_and_close(m):
+                    self.log("Websocket exception: {}".format(m))
+                    self.teardown()
+                # WebSocket exception may happen
+                with catch(Exception, logger_and_close):
+                    result = self.ws.recv()
+                    self.queue.put(result)
             time.sleep(sleep_t)
 
     def on_receive(self, name, callback):
@@ -164,7 +169,7 @@ class EnsimeClient(object):
                         self.message("warn_classpath")
                     return False
                 self.ensime = self.launcher.launch(self.config_path)
-            return True
+            return bool(self.ensime)
 
         def ready_to_connect():
             if not self.websocket_exists:
@@ -202,10 +207,11 @@ class EnsimeClient(object):
         self.ws = create_connection(self.ensime_server)
         self.send_request({"typehint":"ConnectionInfoReq"})
 
-    def teardown(self, filename):
+    def teardown(self):
         """Tear down the server or keep it alive."""
         self.log("teardown: in")
-        if self.ensime and self.enable_teardown:
+        self.running = False
+        if self.ensime and self.toggle_teardown:
             self.ensime.stop()
 
     def cursor(self):
@@ -872,7 +878,7 @@ class Ensime(object):
     def teardown(self):
         """Say goodbye..."""
         for c in self.clients.values():
-            c.teardown(None)
+            c.teardown()
 
     def current_client(self, **kwargs):
         """Return the current client for a given project."""
@@ -906,7 +912,7 @@ class Ensime(object):
         elif create_client:
             client = EnsimeClient(self.vim, self.launcher, config_path)
             quiet = kwargs.get("quiet")
-            classpath_creation = kwargs.get("classpath_creation")
+            classpath_creation = kwargs.get("create_classpath")
             if client.setup(quiet, classpath_creation):
                 self.clients[abs_path] = client
         return client
