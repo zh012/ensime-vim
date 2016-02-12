@@ -5,7 +5,7 @@ import subprocess
 import re
 import time
 
-from ensime_shared.util import Util
+from ensime_shared.util import Util, catch
 from ensime_shared.config import gconfig, feedback
 
 class EnsimeProcess(object):
@@ -109,7 +109,7 @@ class EnsimeLauncher(object):
         Util.write_file(pid_path, str(process.pid))
         def on_stop():
             log.close()
-            with catch(Error, lambda e: None):
+            with catch(Exception, lambda e: None):
                 os.remove(pid_path)
         return EnsimeProcess(cache_dir, process, log_path, on_stop)
 

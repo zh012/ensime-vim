@@ -27,8 +27,8 @@ else:
     from Queue import Queue
 
 commands = {
-    "enerror_matcher": "matchadd('g:EnErrorStyle', '\\%{}l\\%>{}c\\%<{}c')",
-    "highlight_enerror": "highlight EnError ctermbg=red gui=underline",
+    "enerror_matcher": "matchadd('EnErrorStyle', '\\%{}l\\%>{}c\\%<{}c')",
+    "highlight_enerror": "highlight EnErrorStyle ctermbg=red gui=underline",
     "exists_enerrorstyle": "exists('g:EnErrorStyle')",
     "set_enerrorstyle": "let g:EnErrorStyle='EnError'",
     # http://vim.wikia.com/wiki/Timer_to_execute_commands_periodically
@@ -62,9 +62,9 @@ class EnsimeClient(object):
         def setup_vim():
             """Set up vim and execute global commands."""
             self.vim = vim
-            self.vim_command("highlight_enerror")
-            if not self.vim_eval("exists_enerrorstyle"):
+            if not int(self.vim_eval("exists_enerrorstyle")):
                 self.vim_command("set_enerrorstyle")
+            self.vim_command("highlight_enerror")
             self.vim_command("set_updatetime")
             self.vim_command("set_ensime_completion")
 
