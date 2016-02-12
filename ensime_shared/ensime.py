@@ -416,8 +416,11 @@ class EnsimeClient(object):
         args = payload["typeArgs"]
 
         if args:
-            tpes = [x["name"] for x in args]
-            tpe += self.concat_tparams(tpes)
+            if len(args) > 1:
+                tpes = [x["name"] for x in args]
+                tpe += self.concat_tparams(tpes)
+            else: # is 1
+                tpe += "[{}]".format(args[0]["fullName"])
 
         self.log(feedback["displayed_type"].format(tpe))
         self.raw_message(tpe)
