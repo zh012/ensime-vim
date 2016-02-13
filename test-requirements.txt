@@ -1,0 +1,4 @@
+Pytest-cov
+flake8
+coveralls
+autopep8
