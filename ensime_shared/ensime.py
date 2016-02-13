@@ -12,13 +12,8 @@ from threading import Thread
 from subprocess import Popen, PIPE
 
 import json
-import os
-import re
-import logging
 import time
 import datetime
-import inspect
-import unicodedata
 
 # Queue depends on python version
 if sys.version_info > (3, 0):
@@ -75,7 +70,7 @@ class EnsimeClient(object):
             config_dirname = osp.dirname(self.config_path)
             self.ensime_cache = osp.join(config_dirname, ".ensime_cache")
             self.log_dir = self.ensime_cache \
-                    if osp.isdir(self.ensime_cache) else "/tmp/"
+                if osp.isdir(self.ensime_cache) else "/tmp/"
             self.log_file = os.path.join(self.log_dir, "ensime-vim.log")
 
         setup_logger_and_paths()
@@ -97,7 +92,7 @@ class EnsimeClient(object):
         self.errors = []
         self.queue = Queue()
         self.suggestions = None
-        self.completion_timeout = 10 #seconds
+        self.completion_timeout = 10  # seconds
         self.completion_started = False
         self.en_format_source_id = None
         self.enable_fulltype = False
@@ -124,7 +119,7 @@ class EnsimeClient(object):
             tm = now.strftime("%Y-%m-%d %H:%M:%S.%f")
             f.write("{}: {}\n".format(tm, what))
 
-    def queue_poll(self, sleep_t = 0.5):
+    def queue_poll(self, sleep_t=0.5):
         """Put new messages on the queue as they arrive. Blocking in a thread.
 
         Value of sleep is low to improve responsiveness.
@@ -155,15 +150,16 @@ class EnsimeClient(object):
         vim_cmd = commands[key]
         return self.vim.eval(vim_cmd)
 
-    def setup(self, quiet = False, create_classpath = False):
+    def setup(self, quiet=False, create_classpath=False):
         """Check the classpath and connect to the server if necessary."""
         def lazy_initialize_ensime():
             if not self.ensime:
                 called_by = inspect.stack()[4][3]
                 self.log(str(inspect.stack()))
-                self.log("setup({}, {}) called by {}()"\
-                        .format(quiet, create_classpath, called_by))
-                no_classpath = self.launcher.no_classpath_file(self.config_path)
+                self.log("setup({}, {}) called by {}()"
+                         .format(quiet, create_classpath, called_by))
+                no_classpath = self.launcher.no_classpath_file(
+                    self.config_path)
                 if not create_classpath and no_classpath:
                     if not quiet:
                         self.message("warn_classpath")
@@ -205,7 +201,7 @@ class EnsimeClient(object):
             self.ensime_server = gconfig["ensime_server"].format(port)
         from websocket import create_connection
         self.ws = create_connection(self.ensime_server)
-        self.send_request({"typehint":"ConnectionInfoReq"})
+        self.send_request({"typehint": "ConnectionInfoReq"})
 
     def teardown(self):
         """Tear down the server or keep it alive."""
@@ -222,12 +218,6 @@ class EnsimeClient(object):
         """Set cursor at a given row and col in a buffer."""
         self.log("set_cursor: {}".format((row, col)))
         self.vim.current.window.cursor = (row, col)
-
-    def set_cursor(self, char_counter):
-        """Set cursor at nth char in a buffer."""
-        self.log("set_cursor: {}".format((row, col)))
-        cmd = commands["go_to_char"].format(char_counter + 1)
-        self.vim.command(cmd)
 
     def width(self):
         """Return the width of the window."""
@@ -246,7 +236,7 @@ class EnsimeClient(object):
         b = self.cursor()
         return b, e
 
-    def send_at_position(self, what, where = "range"):
+    def send_at_position(self, what, where="range"):
         self.log("send_at_position: in")
         b, e = self.start_end_pos()
         bcol, ecol = b[1], e[1]
@@ -257,7 +247,7 @@ class EnsimeClient(object):
         """Set position from declPos data."""
         if decl_pos["typehint"] == "LineSourcePosition":
             self.set_cursor(decl_pos['line'], 0)
-        else: # OffsetSourcePosition
+        else:  # OffsetSourcePosition
             point = decl_pos["offset"]
             cmd = commands["go_to_char"].format(str(point + 1))
             self.vim.command(cmd)
@@ -280,7 +270,7 @@ class EnsimeClient(object):
         return {"file": self.path(),
                 "contents": self.get_file_content()}
 
-    def ask_input(self, message = 'input: '):
+    def ask_input(self, message='input: '):
         """Ask input to vim and display info string."""
         self.vim_command("input_save")
         # Format to display message with input()
@@ -349,7 +339,7 @@ class EnsimeClient(object):
             current_file = self.path()
             if os.path.abspath(current_file) == os.path.abspath(note["file"]):
                 self.errors.append(Error(note["file"], note["msg"], l, c, e))
-                matcher = commands["enerror_matcher"].format(l,c,e)
+                matcher = commands["enerror_matcher"].format(l, c, e)
                 match = self.vim.eval(matcher)
                 add_match_msg = "adding match {} at line {} column {} error {}"
                 self.log(add_match_msg.format(match, l, c, e))
@@ -369,7 +359,7 @@ class EnsimeClient(object):
     def handle_doc_uri(self, call_id, payload):
         """Handler for responses of Doc URIs."""
         def open_url_browser(url, browser):
-            # If $BROWSER points to a script make 
+            # If $BROWSER points to a script make
             # sure that the shebang line is on the top
             # Cannot block here with a wait() to check success
             Popen([browser, url], stdout=PIPE, stderr=PIPE)
@@ -419,7 +409,7 @@ class EnsimeClient(object):
             if len(args) > 1:
                 tpes = [x["name"] for x in args]
                 tpe += self.concat_tparams(tpes)
-            else: # is 1
+            else:  # is 1
                 tpe += "[{}]".format(args[0]["fullName"])
 
         self.log(feedback["displayed_type"].format(tpe))
@@ -454,13 +444,13 @@ class EnsimeClient(object):
             handler(call_id, payload)
         else:
             self.log(feedback["unhandled_response"].format(payload))
+
     def handle_debug_output(self, call_id, payload):
         """Handle responses `DebugOutputEvent`."""
-        self.raw_message(payload["body"].encode("ascii","ignore"))
+        self.raw_message(payload["body"].encode("ascii", "ignore"))
 
     def handle_debug_break(self, call_id, payload):
         """Handle responses `DebugBreakEvent`."""
-        f, l = payload["file"], payload["line"]
         self.raw_message(feedback["notify_break"])
         self.debug_thread_id = payload["threadId"]
 
@@ -474,42 +464,42 @@ class EnsimeClient(object):
     def complete(self, row, col):
         self.log("complete: in")
         pos = self.get_position(row, col)
-        self.send_request({"point": pos, "maxResults":100,
-            "typehint":"CompletionsReq",
-            "caseSens":True,
-            "fileInfo": self.get_file_info(),
-            "reload":False})
+        self.send_request({"point": pos, "maxResults": 100,
+                           "typehint": "CompletionsReq",
+                           "caseSens": True,
+                           "fileInfo": self.get_file_info(),
+                           "reload": False})
 
-    def send_at_point_req(self, what, path, row, col, size, where = "range"):
+    def send_at_point_req(self, what, path, row, col, size, where="range"):
         """Ask the server to perform an operation at a given position."""
         i = self.get_position(row, col)
         self.send_request(
-            {"typehint" : what + "AtPointReq",
-            "file" : path,
-            where : {"from": i,"to": i + size}})
+            {"typehint": what + "AtPointReq",
+             "file": path,
+             where: {"from": i, "to": i + size}})
 
-    def do_toggle_teardown(self, args, range = None):
+    def do_toggle_teardown(self, args, range=None):
         self.log("do_toggle_teardown: in")
         self.toggle_teardown = not self.toggle_teardown
 
-    def type_check_cmd(self, args, range = None):
+    def type_check_cmd(self, args, range=None):
         self.log("type_check_cmd: in")
         self.type_check("")
 
-    def en_classpath(self, args, range = None):
+    def en_classpath(self, args, range=None):
         self.log("en_classpath: in")
 
-    def format_source(self, args, range = None):
+    def format_source(self, args, range=None):
         self.log("type_check_cmd: in")
         req = {"typehint": "FormatOneSourceReq",
                "file": self.get_file_info()}
         self.en_format_source_id = self.send_request(req)
 
-    def type(self, args, range = None):
+    def type(self, args, range=None):
         self.log("type: in")
         self.send_at_position("Type")
 
-    def toggle_fulltype(self, args, range = None):
+    def toggle_fulltype(self, args, range=None):
         self.log("toggle_fulltype: in")
         self.enable_fulltype = not self.enable_fulltype
 
@@ -517,46 +507,46 @@ class EnsimeClient(object):
         self.call_options[self.call_id] = {"open_definition": open_definition}
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
         self.send_request({
-            "point": pos+1,
-            "typehint":"SymbolAtPointReq",
-            "file":self.path()})
+            "point": pos + 1,
+            "typehint": "SymbolAtPointReq",
+            "file": self.path()})
 
-    def open_declaration(self, args, range = None):
+    def open_declaration(self, args, range=None):
         self.log("open_declaration: in")
         self.symbol_at_point_req(True)
 
-    def open_declaration_split(self, args, range = None):
+    def open_declaration_split(self, args, range=None):
         self.log("open_declaration: in")
         self.call_options[self.call_id] = {"split": True}
         self.symbol_at_point_req(True)
 
-    def symbol(self, args, range = None):
+    def symbol(self, args, range=None):
         self.log("symbol: in")
         self.symbol_at_point_req(False)
 
-    def suggest_import(self, args, range = None):
+    def suggest_import(self, args, range=None):
         self.log("inspect_type: in")
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
         req = {"point": pos,
-               "maxResults":10,
+               "maxResults": 10,
                "names": ["CacheBuilder"],
                "typehint": "ImportSuggestionsReq",
                "file": self.path()}
         self.send_request(req)
 
-    def set_break(self, args, range = None):
+    def set_break(self, args, range=None):
         self.log("set_break: in")
         req = {"line": self.cursor()[0],
-               "maxResults":10,
+               "maxResults": 10,
                "typehint": "DebugSetBreakReq",
                "file": self.path()}
         self.send_request(req)
 
-    def clear_breaks(self, args, range = None):
+    def clear_breaks(self, args, range=None):
         self.log("clear_breaks: in")
         self.send_request({"typehint": "DebugClearAllBreakReq"})
 
-    def debug_start(self, args, range = None):
+    def debug_start(self, args, range=None):
         self.log("debug_start: in")
         if len(args) > 0:
             self.send_request({
@@ -565,20 +555,20 @@ class EnsimeClient(object):
         else:
             self.message("missing_debug_class")
 
-    def debug_continue(self, args, range = None):
+    def debug_continue(self, args, range=None):
         self.log("debug_start: in")
         self.send_request({
             "typehint": "DebugContinueReq",
             "threadId": self.debug_thread_id})
 
-    def backtrace(self, args, range = None):
+    def backtrace(self, args, range=None):
         self.log("backtrace: in")
         self.send_request({
             "typehint": "DebugBacktraceReq",
             "threadId": self.debug_thread_id,
-            "index":0, "count":100})
+            "index": 0, "count": 100})
 
-    def inspect_type(self, args, range = None):
+    def inspect_type(self, args, range=None):
         self.log("inspect_type: in")
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
         self.send_request({
@@ -587,18 +577,18 @@ class EnsimeClient(object):
             "file": self.path(),
             "range": {"from": pos, "to": pos}})
 
-    def doc_uri(self, args, range = None):
+    def doc_uri(self, args, range=None):
         """Request doc of whatever at cursor."""
         self.log("doc_uri: in")
         self.send_at_position("DocUri", "point")
 
-    def doc_browse(self, args, range = None) :
+    def doc_browse(self, args, range=None):
         """Browse doc of whatever at cursor."""
         self.log("browse: in")
         self.call_options[self.call_id] = {"browse": True}
-        self.doc_uri(args, range = None)
+        self.doc_uri(args, range=None)
 
-    def rename(self, new_name, range = None):
+    def rename(self, new_name, range=None):
         """Request a rename to the server."""
         self.log("rename: in")
         if not new_name:
@@ -616,7 +606,7 @@ class EnsimeClient(object):
                 "end": self.get_position(e[0], e[1]) + 1,
                 "file": current_file,
             },
-            { "interactive": False }
+            {"interactive": False}
         )
 
     def send_refactor_request(self, ref_type, ref_params, ref_options):
@@ -637,9 +627,6 @@ class EnsimeClient(object):
 
     def apply_refactor(self, call_id, payload):
         """Apply a refactor depending on its type."""
-        refactor_id = payload["procedureId"]
-        current_file = self.refactorings.get(refactor_id)
-
         if payload["refactorType"]["typehint"] == "Rename":
             diff_filepath = payload["diff"]
             path = self.path()
@@ -689,7 +676,7 @@ class EnsimeClient(object):
     def send_request(self, request):
         """Send a request to the server."""
         self.log("send_request: in")
-        self.send(json.dumps({"callId" : self.call_id,"req" : request}))
+        self.send(json.dumps({"callId": self.call_id, "req": request}))
         call_id = self.call_id
         self.call_id += 1
         return call_id
@@ -715,7 +702,7 @@ class EnsimeClient(object):
         self.log("type_check: in")
         self.send_request(
             {"typehint": "TypecheckFilesReq",
-            "files" : [self.path()]})
+             "files": [self.path()]})
         self.clean_errors()
 
     def unqueue(self, filename, timeout=10):
@@ -746,8 +733,8 @@ class EnsimeClient(object):
             now = time.time()
 
         if (now - start) >= timeout:
-            self.log("unqueue: no reply from server for {}s"\
-                    .format(timeout))
+            self.log("unqueue: no reply from server for {}s"
+                     .format(timeout))
 
     def unqueue_and_display(self, filename):
         """Unqueue messages and give feedback to user (if necessary)."""
@@ -760,14 +747,14 @@ class EnsimeClient(object):
         error = self.get_error_at(self.cursor())
         if error:
             report = error.get_truncated_message(
-                    self.cursor(), self.width() - 1)
+                self.cursor(), self.width() - 1)
             self.raw_message(report)
 
     def on_cursor_hold(self, filename):
         """Handler for event CursorHold."""
         if self.connection_attempts < 10:
-            # Trick to connect ASAP when 
-            # plugin is  started without 
+            # Trick to connect ASAP when
+            # plugin is  started without
             # user interaction (CursorMove)
             self.setup(True, False)
             self.connection_attempts += 1
@@ -809,7 +796,7 @@ class EnsimeClient(object):
             else:
                 while start > 0 and line[start - 1] != " ":
                     start -= 1
-            return row, col, start + 1 # pos in no empty str
+            return row, col, start + 1  # pos in no empty str
 
         self.log("complete_func: in {} {}".format(findstart, base))
         if str(findstart) == "1":
@@ -828,8 +815,8 @@ class EnsimeClient(object):
                 # Unqueing messages until we get suggestions
                 self.unqueue("", timeout=self.completion_timeout)
                 suggestions = self.suggestions or []
-                self.log("complete_func: suggests in {}"\
-                        .format(suggestions))
+                self.log("complete_func: suggests in {}"
+                         .format(suggestions))
                 for m in suggestions:
                     result.append(m)
                 self.suggestions = None
@@ -843,9 +830,9 @@ def execute_with_client(**kwargs):
         # Gets the self reference and pass it
         def wrapper2(self, *vimargs, **vimkwargs):
             # By default, set to true if not present
-            if not "create_client" in kwargs:
+            if "create_client" not in kwargs:
                 kwargs["create_client"] = True
-            # All the missing parameters in 
+            # All the missing parameters in
             # kwargs will be False by default
             client = self.current_client(**kwargs)
             if client:
@@ -855,6 +842,7 @@ def execute_with_client(**kwargs):
 
 
 class Ensime(object):
+
     def __init__(self, vim):
         self.vim = vim
         # Map ensime configs to a ensime clients
@@ -925,88 +913,88 @@ class Ensime(object):
         return self.vim.eval(cmd) == 'scala'
 
     @execute_with_client()
-    def com_en_toggle_teardown(self, client, args, range = None):
+    def com_en_toggle_teardown(self, client, args, range=None):
         client.do_toggle_teardown(None, None)
 
     @execute_with_client()
-    def com_en_type_check(self, client, args, range = None):
+    def com_en_type_check(self, client, args, range=None):
         client.type_check_cmd(None)
 
     @execute_with_client()
-    def com_en_type(self, client, args, range = None):
+    def com_en_type(self, client, args, range=None):
         client.type(None)
 
     @execute_with_client()
-    def com_en_toggle_fulltype(self, client, args, range = None):
+    def com_en_toggle_fulltype(self, client, args, range=None):
         client.toggle_fulltype(None)
 
     @execute_with_client()
-    def com_en_format_source(self, client, args, range = None):
+    def com_en_format_source(self, client, args, range=None):
         client.format_source(None)
 
     @execute_with_client()
-    def com_en_declaration(self, client, args, range = None):
+    def com_en_declaration(self, client, args, range=None):
         client.open_declaration(args, range)
 
     @execute_with_client()
-    def com_en_declaration_split(self, client, args, range = None):
+    def com_en_declaration_split(self, client, args, range=None):
         client.open_declaration_split(args, range)
 
     @execute_with_client()
-    def com_en_symbol(self, client, args, range = None):
+    def com_en_symbol(self, client, args, range=None):
         client.symbol(args, range)
 
     @execute_with_client()
-    def com_en_inspect_type(self, client, args, range = None):
+    def com_en_inspect_type(self, client, args, range=None):
         client.inspect_type(args, range)
 
     @execute_with_client()
-    def com_en_doc_uri(self, client, args, range = None):
+    def com_en_doc_uri(self, client, args, range=None):
         return client.doc_uri(args, range)
 
     @execute_with_client()
-    def com_en_doc_browse(self, client, args, range = None):
+    def com_en_doc_browse(self, client, args, range=None):
         client.doc_browse(args, range)
 
     @execute_with_client()
-    def com_en_suggest_import(self, client, args, range = None):
+    def com_en_suggest_import(self, client, args, range=None):
         client.suggest_import(args, range)
 
     @execute_with_client()
-    def com_en_set_break(self, client, args, range = None):
+    def com_en_set_break(self, client, args, range=None):
         client.set_break(args, range)
 
     @execute_with_client()
-    def com_en_clear_breaks(self, client, args, range = None):
+    def com_en_clear_breaks(self, client, args, range=None):
         client.clear_breaks(args, range)
 
     @execute_with_client()
-    def com_en_debug_start(self, client, args, range = None):
+    def com_en_debug_start(self, client, args, range=None):
         client.debug_start(args, range)
 
-    @execute_with_client(create_classpath = True)
-    def com_en_classpath(self, client, args, range = None):
+    @execute_with_client(create_classpath=True)
+    def com_en_classpath(self, client, args, range=None):
         client.en_classpath(args, range)
 
     @execute_with_client()
-    def com_en_debug_continue(self, client, args, range = None):
+    def com_en_debug_continue(self, client, args, range=None):
         client.debug_continue(args, range)
 
     @execute_with_client()
-    def com_en_backtrace(self, client, args, range = None):
+    def com_en_backtrace(self, client, args, range=None):
         client.backtrace(args, range)
 
     @execute_with_client()
-    def com_en_rename(self, client, args, range = None):
+    def com_en_rename(self, client, args, range=None):
         client.rename(None)
 
     @execute_with_client()
-    def com_en_clients(self, client, args, range = None):
+    def com_en_clients(self, client, args, range=None):
         for path in self.client_keys():
             status = self.client_status(path)
             client.raw_message("{}: {}".format(path, status))
 
-    @execute_with_client(quiet = True)
+    @execute_with_client(quiet=True)
     def au_vim_enter(self, client, filename):
         client.vim_enter(filename)
 
@@ -1014,7 +1002,7 @@ class Ensime(object):
     def au_vim_leave(self, client, filename):
         self.teardown()
 
-    @execute_with_client(quiet = True)
+    @execute_with_client(quiet=True)
     def au_buf_enter(self, client, filename):
         client.buffer_enter(filename)
 
@@ -1030,7 +1018,7 @@ class Ensime(object):
     def au_cursor_hold(self, client, filename):
         client.on_cursor_hold(filename)
 
-    @execute_with_client(quiet = True)
+    @execute_with_client(quiet=True)
     def au_cursor_moved(self, client, filename):
         client.on_cursor_move(filename)
 
