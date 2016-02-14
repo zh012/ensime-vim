@@ -30,9 +30,9 @@ Then, export your `$BROWSER` variable, for example in your `.bashrc`:
 is on top of the file. Otherwise, it won't be executed.*
 
 You also need the [ensime-sbt](https://github.com/ensime/ensime-sbt) plugin. You can
-install it with a pretty one-liner (make sure `0.3.2` is the latest released version):
+install it with a pretty one-liner (make sure `0.3.3` is the latest released version):
     
-    $ echo 'addSbtPlugin("org.ensime" % "ensime-sbt" % "0.3.2")' \
+    $ echo 'addSbtPlugin("org.ensime" % "ensime-sbt" % "0.3.3")' \
         >> ~/.sbt/0.13/plugins/plugins.sbt
 
 In order to install this plugin in your vim, you have two de facto options. Other plugin managers
