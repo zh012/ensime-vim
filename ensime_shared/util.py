@@ -1,7 +1,9 @@
 import os
 from contextlib import contextmanager
 
+
 class Util:
+
     @staticmethod
     def read_file(path):
         with open(path, "r") as f:
@@ -19,17 +21,19 @@ class Util:
         if not os.path.exists(path):
             os.makedirs(path)
 
+
 @contextmanager
-def catch(exception, handler = lambda e: None):
+def catch(exception, handler=lambda e: None):
     """If exception runs handler."""
     try:
         yield
     except exception as e:
         handler(str(e))
 
+
 def module_exists(module_name):
     res = False
     with catch(ImportError):
         __import__(module_name)
-        res =  True
+        res = True
     return res
