@@ -3,8 +3,9 @@ import signal
 import socket
 import subprocess
 import re
+import time
 
-from ensime_shared.util import Util
+from ensime_shared.util import Util, catch
 from ensime_shared.config import gconfig, feedback
 
 class EnsimeProcess(object):
@@ -69,7 +70,7 @@ class EnsimeLauncher(object):
                 classpath = classpath,
                 cache_dir = conf['cache-dir'],
                 java_home = conf['java-home'],
-                java_flags = conf['java-flags'])
+                java_flags = conf['java-flags']) if classpath else None
 
     def classpath_project_dir(self, scala_version):
         return os.path.join(self.base_dir, scala_version)
@@ -84,7 +85,9 @@ class EnsimeLauncher(object):
         project_dir = self.classpath_project_dir(scala_version)
         classpath_file = os.path.join(project_dir, "classpath")
         if not os.path.exists(classpath_file):
-            self.generate_classpath(scala_version, classpath_file)
+            generated = self.generate_classpath(scala_version, classpath_file)
+            if not generated:
+                return None
         return "{}:{}/lib/tools.jar".format(Util.read_file(classpath_file), java_home)
 
     def start_process(self, conf_path, classpath, cache_dir, java_home, java_flags):
@@ -106,21 +109,51 @@ class EnsimeLauncher(object):
         Util.write_file(pid_path, str(process.pid))
         def on_stop():
             log.close()
-            os.remove(pid_path)
+            with catch(Exception, lambda e: None):
+                os.remove(pid_path)
         return EnsimeProcess(cache_dir, process, log_path, on_stop)
 
     def generate_classpath(self, scala_version, classpath_file):
         project_dir = self.classpath_project_dir(scala_version)
         Util.mkdir_p(project_dir)
         Util.mkdir_p(os.path.join(project_dir, "project"))
-        Util.write_file(os.path.join(project_dir, "build.sbt"), self.build_sbt(scala_version, classpath_file))
+        Util.write_file(os.path.join(project_dir, "build.sbt"),
+                self.build_sbt(scala_version, classpath_file))
         Util.write_file(os.path.join(project_dir, "project", "build.properties"),
                 "sbt.version={}".format(self.sbt_version))
-        log_file = os.path.join(project_dir, "build.log")
-        log = open(log_file, 'w')
-        null = open("/dev/null", "r")
-        # see https://github.com/ensime/ensime-vim/issues/29 on why we use this method
-        self.vim.command("!(cd {};sbt -Dsbt.log.noformat=true -batch saveClasspath)".format(project_dir))
+
+        # Synchronous update of the classpath via sbt
+        # see https://github.com/ensime/ensime-vim/issues/29
+        cd_cmd = "cd {}".format(project_dir)
+        sbt_cmd = "sbt -Dsbt.log.noformat=true -batch saveClasspath"
+        inside_nvim = int(self.vim.eval("has('nvim')"))
+        if inside_nvim:
+            cmd = "terminal"
+            import tempfile
+            tmp_dir = tempfile.gettempdir()
+            flag_file = "{}/ensime-vim-classpath.flag".format(tmp_dir)
+            sbt_cmd += "; echo $? > {}".format(flag_file)
+            self.vim.command("echo 'Waiting for generation of classpath...'")
+            self.vim.command("terminal ({} && {})".format(cd_cmd, sbt_cmd))
+
+            # Block execution when sbt is run
+            waiting_for_flag = True
+            while waiting_for_flag:
+                waiting_for_flag = not os.path.isfile(flag_file)
+                if not waiting_for_flag:
+                    with open(flag_file, "r") as f:
+                        rtcode = f.readline()
+                    os.remove(flag_file)
+                    if rtcode and int(rtcode) != 0: #error
+                        self.vim.command("echo 'Something wrong happened, "
+                                + "check the execution log...'")
+                        return None
+                else:
+                    time.sleep(0.2)
+        else:
+            self.vim.command("!({} && {})".format(cd_cmd, sbt_cmd))
+
+        return True
 
     def build_sbt(self, scala_version, classpath_file):
         src = """
