@@ -824,20 +824,21 @@ class EnsimeClient(object):
             return result
 
 
-def execute_with_client(**kwargs):
+def execute_with_client(quiet=False,
+                        create_classpath=False,
+                        create_client=True):
     """Decorator that gets a client and performs an operation on it."""
     def wrapper(f):
-        # Gets the self reference and pass it
-        def wrapper2(self, *vimargs, **vimkwargs):
-            # By default, set to true if not present
-            if "create_client" not in kwargs:
-                kwargs["create_client"] = True
-            # All the missing parameters in
-            # kwargs will be False by default
-            client = self.current_client(**kwargs)
+
+        def wrapper2(self, *args, **kwargs):
+            client = self.current_client(
+                quiet=quiet,
+                create_classpath=create_classpath,
+                create_client=create_client)
             if client:
-                return f(self, client, *vimargs, **vimkwargs)
+                return f(self, client, *args, **kwargs)
         return wrapper2
+
     return wrapper
 
 
@@ -854,7 +855,7 @@ class Ensime(object):
 
     def client_status(self, config_path):
         """Get the client status of a given project."""
-        c = self.client_for(config_path, create=True)
+        c = self.client_for(config_path)
         status = "stopped"
         if not c or not c.ensime:
             status = 'unloaded'
@@ -871,14 +872,18 @@ class Ensime(object):
         for c in self.clients.values():
             c.teardown()
 
-    def current_client(self, **kwargs):
+    def current_client(self, quiet, create_classpath, create_client):
         """Return the current client for a given project."""
         # Use current_file command because we cannot access self.vim
         current_file_cmd = commands["current_file"]
         current_file = self.vim.eval(current_file_cmd)
         config_path = self.find_config_path(current_file)
         if config_path:
-            return self.client_for(config_path, **kwargs)
+            return self.client_for(
+                config_path,
+                quiet=quiet,
+                create_classpath=create_classpath,
+                create_client=create_client)
 
     def find_config_path(self, path):
         """Recursive function that finds the ensime config filepath."""
@@ -893,18 +898,16 @@ class Ensime(object):
 
         return config_path
 
-    def client_for(self, config_path, **kwargs):
+    def client_for(self, config_path, quiet=False, create_classpath=False,
+                   create_client=False):
         """Get a cached client for a project, otherwise create one."""
         client = None
-        create_client = kwargs.get("create_client")
         abs_path = os.path.abspath(config_path)
         if abs_path in self.clients:
             client = self.clients[abs_path]
         elif create_client:
             client = EnsimeClient(self.vim, self.launcher, config_path)
-            quiet = kwargs.get("quiet")
-            classpath_creation = kwargs.get("create_classpath")
-            if client.setup(quiet, classpath_creation):
+            if client.setup(quiet=quiet, create_classpath=create_classpath):
                 self.clients[abs_path] = client
         return client
 
