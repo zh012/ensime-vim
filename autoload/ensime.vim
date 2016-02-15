@@ -158,6 +158,7 @@ function! s:call_plugin(method_name, args) abort
     unlet! g:__error
     python <<PY
 try:
+  import json
   r = getattr(ensime_plugin, vim.eval('a:method_name'))(*vim.eval('a:args'))
   vim.command('let g:__result = ' + json.dumps(([] if r == None else r)))
 except:
