@@ -164,6 +164,10 @@ class EnsimeLauncher(object):
         else:
             self.vim.command("!({} && {})".format(cd_cmd, sbt_cmd))
 
+        success = self.reorder_classpath(classpath_file)
+        if not success:
+            self.vim.command("echo 'Classpath ordering failed.'")
+
         return True
 
     def build_sbt(self, scala_version, classpath_file):
@@ -211,3 +215,29 @@ saveClasspathTask := {
         for item in conf:
             result[item[0]] = item[1]
         return result
+
+    def reorder_classpath(self, classpath_file):
+        """Reorder classpath and put monkeys-jar in the first place."""
+        success = False
+
+        with catch((IOError, OSError), lambda e: None):
+            with open(classpath_file, "r") as f:
+                classpath = f.readline()
+
+            # Proceed if classpath is non-empty
+            if classpath:
+                units = classpath.split(":")
+                reordered_units = []
+                for unit in units:
+                    if "monkeys" in unit:
+                        reordered_units.insert(0, unit)
+                    else:
+                        reordered_units.append(unit)
+                reordered_classpath = ":".join(reordered_units)
+
+                with open(classpath_file, "w") as f:
+                    f.write(reordered_classpath)
+
+            success = True
+
+        return success
