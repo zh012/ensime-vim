@@ -177,11 +177,16 @@ import IO._
 import java.io._
 scalaVersion := "%(scala_version)"
 ivyScala := ivyScala.value map { _.copy(overrideScalaVersion = true) }
-// allows local builds of scala
+
+// Allows local builds of scala
 resolvers += Resolver.mavenLocal
 resolvers += Resolver.sonatypeRepo("snapshots")
 resolvers += "Typesafe repository" at "http://repo.typesafe.com/typesafe/releases/"
 resolvers += "Akka Repo" at "http://repo.akka.io/repository"
+
+// For java support
+resolvers += "NetBeans" at "http://bits.netbeans.org/nexus/content/groups/netbeans"
+
 libraryDependencies ++= Seq(
   "org.ensime" %% "ensime" % "%(version)",
   "org.scala-lang" % "scala-compiler" % scalaVersion.value force(),
