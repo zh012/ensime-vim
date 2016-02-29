@@ -1,4 +1,6 @@
 *.pyc
 .coverage
 htmlcov
+.gitignore
+.ropeproject*
 __pycache__
