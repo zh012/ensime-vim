@@ -30,7 +30,6 @@ command_params = {
     "sync": True
 }
 
-
 @neovim.plugin
 class NeovimEnsime(Ensime):
     """Decorate as a Neovim plugin with the Ensime functionality."""
@@ -147,4 +146,4 @@ class NeovimEnsime(Ensime):
 
     @neovim.function('EnCompleteFunc', sync=True)
     def fun_en_complete_func(self, *args, **kwargs):
-        super(NeovimEnsime, self).fun_en_complete_func(*args, **kwargs)
+        return super(NeovimEnsime, self).fun_en_complete_func(*args, **kwargs)
