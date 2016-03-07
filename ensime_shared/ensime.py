@@ -659,6 +659,8 @@ class EnsimeClient(object):
         if not completion["isCallable"]:
             # It's a raw type
             return f_result
+        elif len(completion["typeSig"]["sections"]) == 0:
+            return f_result
 
         # It's a function type
         f_params = completion["typeSig"]["sections"][0]
@@ -705,7 +707,7 @@ class EnsimeClient(object):
              "files": [self.path()]})
         self.clean_errors()
 
-    def unqueue(self, filename, timeout=10):
+    def unqueue(self, filename, timeout=10, shouldWait=False):
         """Unqueue all the received ensime responses for a given file."""
         def trigger_callbacks(_json):
             for name in self.receive_callbacks:
@@ -713,24 +715,26 @@ class EnsimeClient(object):
                 self.receive_callbacks[name](self, _json["payload"])
 
         start, now = time.time(), time.time()
-        while not self.queue.empty() and (now - start) < timeout:
-            result = self.queue.get(False)
-            self.log("unqueue: result received {}".format(str(result)))
-            if result and result != "nil":
-                # Restart timeout
-                start, now = time.time(), time.time()
-                _json = json.loads(result)
-                # Watch out, it may not have callId
-                call_id = _json.get("callId")
-                if _json["payload"]:
-                    trigger_callbacks(_json)
-                    self.handle_incoming_response(call_id, _json["payload"])
+        wait = self.queue.empty() and shouldWait
+        while (not self.queue.empty() or wait) and (now - start) < timeout:
+            if wait and self.queue.empty():
+                time.sleep(0.25)
+                now = time.time()
             else:
-                self.log("unqueue: nil or None received")
-
-            # Reasonable wait for IO
-            time.sleep(0.25)
-            now = time.time()
+                result = self.queue.get(False)
+                self.log("unqueue: result received {}".format(str(result)))
+                if result and result != "nil":
+                    wait = None
+                    # Restart timeout
+                    start, now = time.time(), time.time()
+                    _json = json.loads(result)
+                    # Watch out, it may not have callId
+                    call_id = _json.get("callId")
+                    if _json["payload"]:
+                        trigger_callbacks(_json)
+                        self.handle_incoming_response(call_id, _json["payload"])
+                else:
+                    self.log("unqueue: nil or None received")
 
         if (now - start) >= timeout:
             self.log("unqueue: no reply from server for {}s"
@@ -806,17 +810,16 @@ class EnsimeClient(object):
                 # Make request to get response ASAP
                 self.complete(row, col)
                 self.completion_started = True
-            return col
+            return min(startcol,col)
         else:
             result = []
             # Only handle snd invocation if fst has already been done
             if self.completion_started:
                 self.vim_command("until_first_char_word")
                 # Unqueing messages until we get suggestions
-                self.unqueue("", timeout=self.completion_timeout)
+                self.unqueue("", timeout=self.completion_timeout, shouldWait=True)
                 suggestions = self.suggestions or []
-                self.log("complete_func: suggests in {}"
-                         .format(suggestions))
+                self.log("complete_func: suggests in {}".format(suggestions))
                 for m in suggestions:
                     result.append(m)
                 self.suggestions = None
