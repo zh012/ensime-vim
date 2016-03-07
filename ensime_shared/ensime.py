@@ -47,8 +47,9 @@ commands = {
     "filetype": "&filetype",
     "go_to_char": "goto {}",
     "set_ensime_completion": "set omnifunc=EnCompleteFunc",
+    "set_quickfix_list": "call setqflist({}, '')",
+    "open_quickfix": "copen"
 }
-
 
 class EnsimeClient(object):
     """Represents an Ensime client per ensime configuration path."""
@@ -308,10 +309,36 @@ class EnsimeClient(object):
         self.handlers["StringResponse"] = self.handle_string_response
         self.handlers["CompletionInfoList"] = self.handle_completion_info_list
         self.handlers["TypeInspectInfo"] = self.handle_type_inspect
+        self.handlers["SymbolSearchResults"] = self.handle_symbol_search
         self.handlers["DebugOutputEvent"] = self.handle_debug_output
         self.handlers["DebugBreakEvent"] = self.handle_debug_break
         self.handlers["DebugBacktrace"] = self.handle_debug_backtrace
         self.handlers["RefactorDiffEffect"] = self.apply_refactor
+
+    def to_quickfix_item(self, file_name, line_number, message, tpe):
+        return { "filename" : file_name,
+         "lnum"     : line_number,
+         "text"     : message,
+         "type"     : tpe }
+
+    def write_quickfix_list(self, qf_list):
+        cmd = commands["set_quickfix_list"].format(str(qf_list))
+        self.vim.command(cmd)
+        self.vim_command("open_quickfix")
+
+    def handle_symbol_search(self, call_id, payload):
+        """Handler for symbol search results"""
+        self.log(payload)
+        syms = payload["syms"]
+        qfList = []
+        for sym in syms:
+            item = self.to_quickfix_item(str(sym["pos"]["file"]),
+                                        sym["pos"]["line"],
+                                        str(sym["name"]),
+                                        "info")
+
+            qfList.append(item)
+        self.write_quickfix_list(qfList)
 
     def handle_symbol_info(self, call_id, payload):
         """Handler for response `SymbolInfo`."""
@@ -608,6 +635,18 @@ class EnsimeClient(object):
             },
             {"interactive": False}
         )
+
+    def symbol_search(self):
+        """Search for symbols matching a set of keywords"""
+        self.log("symbol_search: in")
+        terms = self.ask_input("Search Symbol: ").split()
+        self.vim_command("write_file")
+        req = {
+            "typehint": "PublicSymbolSearchReq",
+            "keywords": terms,
+            "maxResults": 25
+        }
+        self.send_request(req)
 
     def send_refactor_request(self, ref_type, ref_params, ref_options):
         """Send a refactor request to the Ensime server.
@@ -999,6 +1038,10 @@ class Ensime(object):
         for path in self.client_keys():
             status = self.client_status(path)
             client.raw_message("{}: {}".format(path, status))
+
+    @execute_with_client()
+    def com_en_sym_search(self, client, args, range=None):
+        client.symbol_search()
 
     @execute_with_client(quiet=True)
     def au_vim_enter(self, client, filename):
