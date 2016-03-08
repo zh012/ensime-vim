@@ -82,6 +82,10 @@ function! ensime#com_en_type(args, range) abort
     return s:call_plugin('com_en_type', [a:args, a:range])
 endfunction
 
+function! ensime#com_en_sym_search(args, range) abort
+    return s:call_plugin('com_en_sym_search', [a:args, a:range])
+endfunction
+
 function! ensime#com_en_toggle_fulltype(args, range) abort
     return s:call_plugin('com_en_toggle_fulltype', [a:args, a:range])
 endfunction
