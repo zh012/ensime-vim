@@ -4,6 +4,7 @@ import socket
 import subprocess
 import re
 import time
+import shutil
 
 from ensime_shared.util import Util, catch
 
@@ -47,11 +48,12 @@ class EnsimeProcess(object):
 
 join = os.path.join
 home = os.environ["HOME"]
+
 # Use a new path that is clearer and more user-friendly
 _default_base_dir = join(home, ".config/ensime-vim/")
 _old_base_dir = join(home, ".config/classpath_project_ensime")
 if os.path.isdir(_old_base_dir):
-    os.rename(_old_base_dir, _default_base_dir)
+    shutil.move(_old_base_dir, _default_base_dir)
 
 
 class EnsimeLauncher(object):
