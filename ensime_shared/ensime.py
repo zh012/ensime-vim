@@ -833,7 +833,7 @@ class EnsimeClient(object):
             row, col = self.cursor()
             start = col
             line = self.vim.current.line
-            while start > 0 and line[start - 1] != " ":
+            while start > 0 and line[start - 1] not in " .":
                 start -= 1
             # Start should be 1 when startcol is zero
             return row, col, start if start else 1
