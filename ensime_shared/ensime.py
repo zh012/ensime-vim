@@ -531,7 +531,11 @@ class EnsimeClient(object):
         self.enable_fulltype = not self.enable_fulltype
 
     def symbol_at_point_req(self, open_definition):
-        self.call_options[self.call_id] = {"open_definition": open_definition}
+        opts = self.call_options[self.call_id]
+        if opts:
+            opts["open_definition"] = open_definition
+        else:
+            self.call_options[self.call_id] = {"open_definition": open_definition}
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
         self.send_request({
             "point": pos + 1,
