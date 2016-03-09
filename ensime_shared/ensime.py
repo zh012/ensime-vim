@@ -833,23 +833,22 @@ class EnsimeClient(object):
             row, col = self.cursor()
             start = col
             line = self.vim.current.line
-            # No completion from empty string
-            if start != 0 and line[start - 1] == " ":
-                start = -1
-            else:
-                while start > 0 and line[start - 1] != " ":
-                    start -= 1
-            return row, col, start + 1  # pos in no empty str
+            while start > 0 and line[start - 1] not in " .":
+                start -= 1
+            # Start should be 1 when startcol is zero
+            return row, col, start if start else 1
 
         self.log("complete_func: in {} {}".format(findstart, base))
         if str(findstart) == "1":
             row, col, startcol = detect_row_column_start()
-            if startcol != -1:
-                self.vim_command("write_file")
-                # Make request to get response ASAP
-                self.complete(row, col)
-                self.completion_started = True
-            return min(startcol,col)
+
+            self.vim_command("write_file")
+            # Make request to get response ASAP
+            self.complete(row, col)
+            self.completion_started = True
+
+            # We always allow autocompletion, even with empty seeds
+            return startcol
         else:
             result = []
             # Only handle snd invocation if fst has already been done
