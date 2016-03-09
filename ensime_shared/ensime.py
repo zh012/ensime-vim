@@ -531,7 +531,7 @@ class EnsimeClient(object):
         self.enable_fulltype = not self.enable_fulltype
 
     def symbol_at_point_req(self, open_definition):
-        opts = self.call_options[self.call_id]
+        opts = self.call_options.get(self.call_id)
         if opts:
             opts["open_definition"] = open_definition
         else:
