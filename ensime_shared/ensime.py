@@ -48,7 +48,12 @@ commands = {
     "go_to_char": "goto {}",
     "set_ensime_completion": "set omnifunc=EnCompleteFunc",
     "set_quickfix_list": "call setqflist({}, '')",
-    "open_quickfix": "copen"
+    "open_quickfix": "copen",
+    "syntastic_available": 'exists("g:SyntasticRegistry")',
+    "syntastic_enable": "if exists('g:SyntasticRegistry') | let &runtimepath .= ',' . {!r} | endif",
+    "syntastic_append_notes": 'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif | let b:ensime_scala_notes += {}',
+    "syntastic_reset_notes": 'let b:ensime_scala_notes = []',
+    "syntastic_show_notes": "silent SyntasticCheck ensime",
 }
 
 class EnsimeClient(object):
@@ -303,7 +308,8 @@ class EnsimeClient(object):
         self.handlers["IndexerReadyEvent"] = f_indexer
         f_indexer = lambda ci, p: self.message("analyzer_ready")
         self.handlers["AnalyzerReadyEvent"] = f_indexer
-        self.handlers["NewScalaNotesEvent"] = self.handle_new_scala_notes_event
+        self.handlers["NewScalaNotesEvent"] = (self.handle_new_scala_notes_event_with_syntastic
+                if self.vim_eval('syntastic_available') else self.handle_new_scala_notes_event)
         self.handlers["BasicTypeInfo"] = self.show_type
         self.handlers["ArrowTypeInfo"] = self.show_ftype
         self.handlers["StringResponse"] = self.handle_string_response
@@ -357,15 +363,31 @@ class EnsimeClient(object):
                 self.set_position(decl_pos)
                 del self.call_options[call_id]
 
+    def handle_new_scala_notes_event_with_syntastic(self, call_id, payload):
+        """Syntastic specific handler for response `NewScalaNotesEvent`."""
+
+        current_file = os.path.abspath(self.path())
+        loclist = list({
+                'bufnr': self.vim.current.buffer.number,
+                'lnum': note['line'],
+                'col': note['col'],
+                'text': note['msg'],
+                'len': note['end'] - note['beg'] + 1,
+                'type': note['severity']['typehint'][4:5],
+                'valid': 1
+            } for note in payload["notes"] if current_file == os.path.abspath(note['file']))
+        self.vim.command(commands['syntastic_append_notes'].format(json.dumps(loclist)))
+        self.vim_command('syntastic_show_notes')
+
     def handle_new_scala_notes_event(self, call_id, payload):
         """Handler for response `NewScalaNotesEvent`."""
+        current_file = os.path.abspath(self.path())
         for note in payload["notes"]:
             l = note["line"]
             c = note["col"] - 1
             e = note["col"] + (note["end"] - note["beg"] + 1)
 
-            current_file = self.path()
-            if os.path.abspath(current_file) == os.path.abspath(note["file"]):
+            if current_file == os.path.abspath(note["file"]):
                 self.errors.append(Error(note["file"], note["msg"], l, c, e))
                 matcher = commands["enerror_matcher"].format(l, c, e)
                 match = self.vim.eval(matcher)
@@ -732,6 +754,7 @@ class EnsimeClient(object):
     def clean_errors(self):
         """Clean errors and unhighlight them in vim."""
         self.vim.eval("clearmatches()")
+        self.vim_command('syntastic_reset_notes')
         self.matches = []
         self.errors = []
 
@@ -897,6 +920,15 @@ class Ensime(object):
         # Map ensime configs to a ensime clients
         self.clients = {}
         self.launcher = EnsimeLauncher(vim)
+        self.init_integrations()
+
+    def init_integrations(self):
+        syntastic_runtime = os.path.abspath(
+            os.path.join(os.path.dirname(__file__),
+                os.path.pardir,
+                'plugin_integrations',
+                'syntastic'))
+        self.vim.command(commands['syntastic_enable'].format(syntastic_runtime))
 
     def client_keys(self):
         return self.clients.keys()
