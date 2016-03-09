@@ -841,11 +841,11 @@ class EnsimeClient(object):
         self.log("complete_func: in {} {}".format(findstart, base))
         if str(findstart) == "1":
             row, col, startcol = detect_row_column_start()
-            if startcol:
-                self.vim_command("write_file")
-                # Make request to get response ASAP
-                self.complete(row, col)
-                self.completion_started = True
+
+            self.vim_command("write_file")
+            # Make request to get response ASAP
+            self.complete(row, col)
+            self.completion_started = True
 
             # We always allow autocompletion, even with empty seeds
             return startcol
