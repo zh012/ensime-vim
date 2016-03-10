@@ -33,6 +33,7 @@ They should be ran from
 
 :EnClasspath            generates classpath for ensime and launch ensime-server
 :EnType                 displays type under cursor
+:EnInspectType          displays implemented interfaces and the type under cursor
 :EnSearch               search for a public symbol
 :EnSymbol               displays the path where the symbol under cursor was declared
 :EnDeclaration          open buffer where the symbol under cursor was declared

@@ -425,7 +425,10 @@ class EnsimeClient(object):
 
     def handle_type_inspect(self, call_id, payload):
         """Handler for responses `TypeInspectInfo`."""
-        self.raw_message(payload["type"]["fullName"])
+        interfaces = payload.get("interfaces")
+        ts = [i["type"]["name"] for i in interfaces]
+        prefix = "( " + ", ".join(ts) + " ) => "
+        self.raw_message(prefix + payload["type"]["fullName"])
 
     def show_type(self, call_id, payload):
         """Show type of a variable or scala type."""
