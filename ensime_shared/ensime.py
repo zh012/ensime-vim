@@ -327,7 +327,7 @@ class EnsimeClient(object):
         self.handlers["ImportSuggestions"] = self.handle_import_suggestions
 
     def handle_import_suggestions(self, call_id, payload):
-        imports = list(sorted(set(suggestion['name'] for suggestions in payload['symLists'] for suggestion in suggestions)))
+        imports = list(sorted(set(suggestion['name'].replace('$', '.') for suggestions in payload['symLists'] for suggestion in suggestions)))
         if imports:
             chosen_import = int(self.vim.eval(commands['select_item_list'].format(json.dumps(
                 ["Select class to import:"] + ["{}. {}".format(num + 1, imp) for (num, imp) in enumerate(imports)]))))
