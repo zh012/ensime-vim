@@ -54,6 +54,10 @@ commands = {
     "syntastic_append_notes": 'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif | let b:ensime_scala_notes += {}',
     "syntastic_reset_notes": 'let b:ensime_scala_notes = []',
     "syntastic_show_notes": "silent SyntasticCheck ensime",
+    "get_cursor_word": 'expand("<cword>")',
+    "select_item_list": 'inputlist({})',
+    "find_first_import": 'searchpos("^import", "n")',
+    "append_line": 'call append({}, {!r})',
 }
 
 class EnsimeClient(object):
@@ -320,6 +324,21 @@ class EnsimeClient(object):
         self.handlers["DebugBreakEvent"] = self.handle_debug_break
         self.handlers["DebugBacktrace"] = self.handle_debug_backtrace
         self.handlers["RefactorDiffEffect"] = self.apply_refactor
+        self.handlers["ImportSuggestions"] = self.handle_import_suggestions
+
+    def handle_import_suggestions(self, call_id, payload):
+        imports = list(sorted(set(suggestion['name'] for suggestions in payload['symLists'] for suggestion in suggestions)))
+        if imports:
+            chosen_import = int(self.vim.eval(commands['select_item_list'].format(json.dumps(
+                ["Select class to import:"] + ["{}. {}".format(num + 1, imp) for (num, imp) in enumerate(imports)]))))
+
+            if chosen_import > 0:
+                chosen_import = "import {}".format(imports[chosen_import - 1])
+
+                (line, _) = self.vim_eval('find_first_import')
+                self.vim.command(commands['append_line'].format((int(line) or 1) - 1, chosen_import))
+        else:
+            self.vim.command(commands['display_message'].format("No import suggestions found"))
 
     def to_quickfix_item(self, file_name, line_number, message, tpe):
         return { "filename" : file_name,
@@ -584,9 +603,10 @@ class EnsimeClient(object):
     def suggest_import(self, args, range=None):
         self.log("inspect_type: in")
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
+        word = self.vim_eval('get_cursor_word')
         req = {"point": pos,
                "maxResults": 10,
-               "names": ["CacheBuilder"],
+               "names": [word],
                "typehint": "ImportSuggestionsReq",
                "file": self.path()}
         self.send_request(req)
