@@ -332,12 +332,13 @@ class EnsimeClient(object):
         syms = payload["syms"]
         qfList = []
         for sym in syms:
-            item = self.to_quickfix_item(str(sym["pos"]["file"]),
-                                        sym["pos"]["line"],
-                                        str(sym["name"]),
-                                        "info")
-
-            qfList.append(item)
+            p = sym.get("pos")
+            if p:
+                item = self.to_quickfix_item(str(p["file"]),
+                                            p["line"],
+                                            str(sym["name"]),
+                                            "info")
+                qfList.append(item)
         self.write_quickfix_list(qfList)
 
     def handle_symbol_info(self, call_id, payload):
@@ -644,7 +645,6 @@ class EnsimeClient(object):
         """Search for symbols matching a set of keywords"""
         self.log("symbol_search: in")
         terms = self.ask_input("Search Symbol: ").split()
-        self.vim_command("write_file")
         req = {
             "typehint": "PublicSymbolSearchReq",
             "keywords": terms,
