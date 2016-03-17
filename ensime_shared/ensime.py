@@ -1134,7 +1134,7 @@ class Ensime(object):
         """Invokable function from vim and neovim to perform completion."""
         if self.is_scala_file():
             client.log("{} {}".format(findstart_and_base, base))
-            if not (isinstance(findstart_and_base, list)) and not base:
+            if not (isinstance(findstart_and_base, list)):
                 # Invoked by vim
                 findstart = findstart_and_base
             else:
