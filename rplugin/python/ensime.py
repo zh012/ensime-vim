@@ -116,6 +116,10 @@ class NeovimEnsime(Ensime):
     def com_en_rename(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_rename(*args, **kwargs)
 
+    @neovim.command('EnInline', **command_params)
+    def com_en_inline(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_inline(*args, **kwargs)
+
     @neovim.command('EnClients', range='', nargs='0', sync=True)
     def com_en_clients(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_clients(*args, **kwargs)

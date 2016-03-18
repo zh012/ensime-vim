@@ -60,6 +60,7 @@ commands = {
     "append_line": 'call append({}, {!r})',
 }
 
+
 class EnsimeClient(object):
     """Represents an Ensime client per ensime configuration path."""
 
@@ -686,6 +687,25 @@ class EnsimeClient(object):
             {"interactive": False}
         )
 
+    def inlineLocal(self, range=None):
+        """Perform a local inline"""
+        self.log("inline: in")
+        self.vim_command("write_file")
+        b, e = self.start_end_pos()
+        current_file = self.path()
+        self.raw_message(current_file)
+        self.send_refactor_request(
+            "RefactorReq",
+            {
+                "typehint": "InlineLocalRefactorDesc",
+                "start": self.get_position(b[0], b[1]),
+                "end": self.get_position(e[0], e[1]) + 1,
+                "file": current_file,
+            },
+            { "interactive": False }
+        )
+
+
     def symbol_search(self):
         """Search for symbols matching a set of keywords"""
         self.log("symbol_search: in")
@@ -715,7 +735,7 @@ class EnsimeClient(object):
 
     def apply_refactor(self, call_id, payload):
         """Apply a refactor depending on its type."""
-        if payload["refactorType"]["typehint"] == "Rename":
+        if payload["refactorType"]["typehint"] in ["Rename", "InlineLocal"]:
             diff_filepath = payload["diff"]
             path = self.path()
             bname = os.path.basename(path)
@@ -1090,6 +1110,10 @@ class Ensime(object):
     @execute_with_client()
     def com_en_rename(self, client, args, range=None):
         client.rename(None)
+
+    @execute_with_client()
+    def com_en_inline(self, client, args, range=None):
+        client.inlineLocal(None)
 
     @execute_with_client()
     def com_en_clients(self, client, args, range=None):
