@@ -42,6 +42,7 @@ commands = {
     "reload_file": "checktime",
     "display_message": "echo \"{}\"",
     "split_window": "split {}",
+    "vert_split_window": "vsplit {}",
     "doautocmd_bufleave": "doautocmd BufLeave",
     "doautocmd_bufreadenter": "doautocmd BufRead,BufEnter",
     "filetype": "&filetype",
@@ -376,7 +377,12 @@ class EnsimeClient(object):
                 self.clean_errors()
                 self.vim_command("doautocmd_bufleave")
                 split = self.call_options[call_id].get("split")
-                key = "split_window" if split else "edit_file"
+                vert = self.call_options[call_id].get("vert")
+                key = ""
+                if split:
+                    key = "vert_split_window" if vert else "split_window"
+                else:
+                    key = "edit_file"
                 self.vim.command(commands[key].format(decl_pos["file"]))
                 self.vim_command("doautocmd_bufreadenter")
                 self.set_position(decl_pos)
@@ -593,7 +599,11 @@ class EnsimeClient(object):
 
     def open_declaration_split(self, args, range=None):
         self.log("open_declaration: in")
-        self.call_options[self.call_id] = {"split": True}
+        if "v" in args:
+            self.call_options[self.call_id] = {"split": True, "vert": True}
+        else:
+            self.call_options[self.call_id] = {"split": True }
+
         self.symbol_at_point_req(True)
 
     def symbol(self, args, range=None):
