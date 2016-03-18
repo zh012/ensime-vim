@@ -21,6 +21,7 @@ command! -nargs=* -range EnDeclaration call ensime#com_en_declaration([<f-args>]
 command! -nargs=* -range EnDeclarationSplit call ensime#com_en_declaration_split([<f-args>], '')
 command! -nargs=* -range EnSymbol call ensime#com_en_symbol([<f-args>], '')
 command! -nargs=* -range EnRename call ensime#com_en_rename([<f-args>], '')
+command! -nargs=* -range EnInline call ensime#com_en_inline([<f-args>], '')
 command! -nargs=* -range EnInspectType call ensime#com_en_inspect_type([<f-args>], '')
 command! -nargs=* -range EnDocUri call ensime#com_en_doc_uri([<f-args>], '')
 command! -nargs=* -range EnDocBrowse call ensime#com_en_doc_browse([<f-args>], '')

@@ -110,6 +110,10 @@ function! ensime#com_en_rename(args, range) abort
     return s:call_plugin('com_en_rename', [a:args, a:range])
 endfunction
 
+function! ensime#com_en_inline(args, range) abort
+    return s:call_plugin('com_en_inline', [a:args, a:range])
+endfunction
+
 function! ensime#com_en_inspect_type(args, range) abort
     return s:call_plugin('com_en_inspect_type', [a:args, a:range])
 endfunction
