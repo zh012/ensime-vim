@@ -50,6 +50,8 @@ commands = {
     "set_ensime_completion": "set omnifunc=EnCompleteFunc",
     "set_quickfix_list": "call setqflist({}, '')",
     "open_quickfix": "copen",
+    "disable_plugin": "set runtimepath-={}",
+    "runtimepath": "&runtimepath",
     "syntastic_available": 'exists("g:SyntasticRegistry")',
     "syntastic_enable": "if exists('g:SyntasticRegistry') | let &runtimepath .= ',' . {!r} | endif",
     "syntastic_append_notes": 'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif | let b:ensime_scala_notes += {}',
@@ -85,6 +87,16 @@ class EnsimeClient(object):
                 if osp.isdir(self.ensime_cache) else "/tmp/"
             self.log_file = os.path.join(self.log_dir, "ensime-vim.log")
 
+        def fetch_runtime_paths():
+            """Fetch all the runtime paths of ensime-vim plugin."""
+            paths = self.vim_eval("runtimepath")
+            tag = "ensime-vim"
+            ps = [p for p in paths.split(',') if tag in p]
+            home = os.environ.get("HOME")
+            if home:
+                ps = map(lambda s: s.replace(home, "~"), ps)
+            return ps
+
         setup_logger_and_paths()
         setup_vim()
         self.log("__init__: in")
@@ -113,6 +125,14 @@ class EnsimeClient(object):
         self.tmp_diff_folder = "/tmp/ensime-vim/diffs/"
         Util.mkdir_p(self.tmp_diff_folder)
 
+        # Set the runtime path here in case we need
+        # to disable the plugin. It needs to be done
+        # beforehand since vim.eval is not threadsafe
+        self.runtime_paths = fetch_runtime_paths()
+
+        # By default, don't connect to server more than once
+        self.number_try_connection = 1
+
         self.debug_thread_id = None
         self.running = True
         Thread(target=self.queue_poll, args=()).start()
@@ -136,16 +156,28 @@ class EnsimeClient(object):
 
         Value of sleep is low to improve responsiveness.
         """
+        connection_alive = True
         while self.running:
             if self.ws:
                 def logger_and_close(m):
                     self.log("Websocket exception: {}".format(m))
-                    self.teardown()
+                    if not self.running:
+                        # Tear down has been invoked
+                        # Prepare to exit the program
+                        connection_alive = False
+                    else:
+                        if not self.number_try_connection:
+                            # Stop everything and disable plugin
+                            self.teardown()
+                            self.disable_plugin()
+
                 # WebSocket exception may happen
                 with catch(Exception, logger_and_close):
                     result = self.ws.recv()
                     self.queue.put(result)
-            time.sleep(sleep_t)
+
+            if connection_alive:
+                time.sleep(sleep_t)
 
     def on_receive(self, name, callback):
         """Executed when a response is received from the server."""
@@ -187,40 +219,82 @@ class EnsimeClient(object):
             return True
 
         # True if ensime is up and connection is ok, otherwise False
-        return lazy_initialize_ensime() and ready_to_connect()
+        return self.running and lazy_initialize_ensime() and ready_to_connect()
 
     def tell_module_missing(self, name):
+        """Warn users that a module is not available in their machines."""
         msg = feedback["module_missing"]
         self.raw_message(msg.format(name, name))
+
+    def threadsafe_vim(self, command):
+        """Threadsafe call if neovim, normal if vim."""
+        def normal_vim(e):
+            self.vim.command(command)
+        with catch(Exception, normal_vim):
+            self.vim.session.threadsafe_call(command)
+
+    def disable_plugin(self):
+        """Disable plugin temporarily, including also related plugins."""
+        self.log("disable_plugin: in")
+
+        for path in self.runtime_paths:
+            self.log(path)
+            disable = commands["disable_plugin"].format(path)
+            self.threadsafe_vim(disable)
+
+        warning = "A WS exception happened, 'ensime-vim' has been disabled. " +\
+            "For more information, have a look at the logs in `.ensime_cache`"
+        display_msg = commands["display_message"].format(warning)
+        self.threadsafe_vim(display_msg)
 
     def send(self, msg):
         """Send something to the ensime server."""
         def reconnect(e):
             self.log("send error: {}, reconnecting...".format(e))
             self.connect_ensime_server()
-            self.ws.send(msg + "\n")
+            if self.ws:
+                self.ws.send(msg + "\n")
 
         self.log("send: in")
-        if self.ws:
+        if self.running and self.ws:
             with catch(Exception, reconnect):
                 self.log("send: {}".format(msg))
                 self.ws.send(msg + "\n")
 
     def connect_ensime_server(self):
         """Start initial connection with the server."""
-        if not self.ensime_server:
-            port = self.ensime.http_port()
-            self.ensime_server = gconfig["ensime_server"].format(port)
-        from websocket import create_connection
-        self.ws = create_connection(self.ensime_server)
-        self.send_request({"typehint": "ConnectionInfoReq"})
+        self.log("connect_ensime_server: in")
+
+        def disable_completely(e):
+            if e:
+                self.log("connection error: {}".format(e))
+            self.shutdown_server()
+            self.disable_plugin()
+
+        if self.running and self.number_try_connection:
+            self.number_try_connection -= 1
+            if not self.ensime_server:
+                port = self.ensime.http_port()
+                self.ensime_server = gconfig["ensime_server"].format(port)
+            with catch(Exception, disable_completely):
+                from websocket import create_connection
+                self.ws = create_connection(self.ensime_server)
+            if self.ws:
+                self.send_request({"typehint": "ConnectionInfoReq"})
+        else:
+            # If it hits this, number_try_connection is 0
+            disable_completely(None)
+
+    def shutdown_server(self):
+        """Shut down server if it is alive."""
+        if self.ensime and self.toggle_teardown:
+            self.ensime.stop()
 
     def teardown(self):
         """Tear down the server or keep it alive."""
         self.log("teardown: in")
         self.running = False
-        if self.ensime and self.toggle_teardown:
-            self.ensime.stop()
+        self.shutdown_server()
 
     def cursor(self):
         """Return the row and col of the current buffer."""
@@ -826,7 +900,7 @@ class EnsimeClient(object):
              "files": [self.path()]})
         self.clean_errors()
 
-    def unqueue(self, filename, timeout=10, shouldWait=False):
+    def unqueue(self, filename, timeout=10, should_wait=False):
         """Unqueue all the received ensime responses for a given file."""
         def trigger_callbacks(_json):
             for name in self.receive_callbacks:
@@ -834,7 +908,7 @@ class EnsimeClient(object):
                 self.receive_callbacks[name](self, _json["payload"])
 
         start, now = time.time(), time.time()
-        wait = self.queue.empty() and shouldWait
+        wait = self.queue.empty() and should_wait
         while (not self.queue.empty() or wait) and (now - start) < timeout:
             if wait and self.queue.empty():
                 time.sleep(0.25)
@@ -861,7 +935,7 @@ class EnsimeClient(object):
 
     def unqueue_and_display(self, filename):
         """Unqueue messages and give feedback to user (if necessary)."""
-        if self.ws:
+        if self.running and self.ws:
             self.lazy_display_error(filename)
             self.unqueue(filename)
 
@@ -935,7 +1009,7 @@ class EnsimeClient(object):
             if self.completion_started:
                 self.vim_command("until_first_char_word")
                 # Unqueing messages until we get suggestions
-                self.unqueue("", timeout=self.completion_timeout, shouldWait=True)
+                self.unqueue("", timeout=self.completion_timeout, should_wait=True)
                 suggestions = self.suggestions or []
                 self.log("complete_func: suggests in {}".format(suggestions))
                 for m in suggestions:
@@ -956,7 +1030,7 @@ def execute_with_client(quiet=False,
                 quiet=quiet,
                 create_classpath=create_classpath,
                 create_client=create_client)
-            if client:
+            if client and client.running:
                 return f(self, client, *args, **kwargs)
         return wrapper2
 
