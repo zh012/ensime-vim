@@ -392,6 +392,9 @@ class EnsimeClient(object):
     def handle_new_scala_notes_event_with_syntastic(self, call_id, payload):
         """Syntastic specific handler for response `NewScalaNotesEvent`."""
 
+        def is_note_correct(note):
+            return note['beg'] != -1 and note['end'] != -1
+
         current_file = os.path.abspath(self.path())
         loclist = list({
                 'bufnr': self.vim.current.buffer.number,
@@ -401,9 +404,15 @@ class EnsimeClient(object):
                 'len': note['end'] - note['beg'] + 1,
                 'type': note['severity']['typehint'][4:5],
                 'valid': 1
-            } for note in payload["notes"] if current_file == os.path.abspath(note['file']))
-        self.vim.command(commands['syntastic_append_notes'].format(json.dumps(loclist)))
-        self.vim_command('syntastic_show_notes')
+            } for note in payload["notes"] \
+                    if current_file == os.path.abspath(note['file']) and \
+                        is_note_correct(note)
+        )
+
+        json_list = json.dumps(loclist)
+        if json_list:
+            self.vim.command(commands['syntastic_append_notes'].format(json_list))
+            self.vim_command('syntastic_show_notes')
 
     def handle_new_scala_notes_event(self, call_id, payload):
         """Handler for response `NewScalaNotesEvent`."""
