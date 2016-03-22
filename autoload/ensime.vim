@@ -1,5 +1,6 @@
 if !has('nvim')
-    execute 'pyfile' expand('<sfile>:p').'.py'
+    execute 'silent! pyfile' expand('<sfile>:p').'.py'
+    execute ':redraw!'
 endif
 
 function! ensime#client_keys() abort
