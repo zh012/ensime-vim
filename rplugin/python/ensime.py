@@ -104,6 +104,10 @@ class NeovimEnsime(Ensime):
     def com_en_classpath(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_classpath(*args, **kwargs)
 
+    @neovim.command('EnShowPackage', **command_params)
+    def com_en_package_inspect(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_package_inspect(*args, **kwargs)
+
     @neovim.command('EnContinue', **command_params)
     def com_en_debug_continue(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_debug_continue(*args, **kwargs)
