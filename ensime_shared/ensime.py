@@ -43,6 +43,7 @@ commands = {
     "display_message": "echo \"{}\"",
     "split_window": "split {}",
     "vert_split_window": "vsplit {}",
+    "new_vertical_window": "{}vnew {}",
     "doautocmd_bufleave": "doautocmd BufLeave",
     "doautocmd_bufreadenter": "doautocmd BufRead,BufEnter",
     "filetype": "&filetype",
@@ -327,6 +328,7 @@ class EnsimeClient(object):
         self.handlers["DebugBacktrace"] = self.handle_debug_backtrace
         self.handlers["RefactorDiffEffect"] = self.apply_refactor
         self.handlers["ImportSuggestions"] = self.handle_import_suggestions
+        self.handlers["PackageInfo"] = self.handle_package_info
 
     def handle_import_suggestions(self, call_id, payload):
         imports = list(sorted(set(suggestion['name'].replace('$', '.') for suggestions in payload['symLists'] for suggestion in suggestions)))
@@ -341,6 +343,23 @@ class EnsimeClient(object):
                 self.vim.command(commands['append_line'].format((int(line) or 1) - 1, chosen_import))
         else:
             self.vim.command(commands['display_message'].format("No import suggestions found"))
+
+    def handle_package_info(self, call_id, payload):
+        package = payload["fullName"]
+        # Create a new buffer 45 columns wide
+        def add(member, indentLevel):
+            indent = "  " * indentLevel
+            line = indent + member["name"]
+            self.vim.command(commands["append_line"].format("\'$\'", str(line)))
+            if indentLevel < 4:
+                for m in member["members"]:
+                    add(m, indentLevel + 1)
+
+        cmd = commands["new_vertical_window"].format(str(45),package)
+        self.vim.command(cmd)
+        self.vim.command(commands["append_line"].format("\'$\'", str(package)))
+        for member in payload["members"]:
+            add(member, 1)
 
     def to_quickfix_item(self, file_name, line_number, message, tpe):
         return { "filename" : file_name,
@@ -602,6 +621,12 @@ class EnsimeClient(object):
             "point": pos + 1,
             "typehint": "SymbolAtPointReq",
             "file": self.path()})
+
+    def inspect_package(self, args):
+        self.send_request({
+            "typehint": "InspectPackageByPathReq",
+            "path": args[0]
+        })
 
     def open_declaration(self, args, range=None):
         self.log("open_declaration: in")
@@ -1143,6 +1168,10 @@ class Ensime(object):
     @execute_with_client()
     def com_en_sym_search(self, client, args, range=None):
         client.symbol_search()
+
+    @execute_with_client()
+    def com_en_package_inspect(self, client, args, range=None):
+        client.inspect_package(args)
 
     @execute_with_client(quiet=True)
     def au_vim_enter(self, client, filename):
