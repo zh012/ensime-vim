@@ -35,17 +35,20 @@ They should be ran from
 :EnType                 displays type under cursor
 :EnInspectType          displays implemented interfaces and the type under cursor
 :EnSearch               search for a public symbol
+:EnShowPackage          open a new buffer with the package info for fully qualified package provided
 :EnSymbol               displays the path where the symbol under cursor was declared
 :EnDeclaration          open buffer where the symbol under cursor was declared
-:EnDeclarationSplit     split window where the symbol under cursor was declared
+:EnDeclarationSplit     split window horizontally where the symbol under cursor was declared. Use v for vertical split
 :EnDocUri               displays documentation url under cursor
 :EnDocBrowse            launch $BROWSER (env variable) documentation url
 :EnTypeCheck            launch a check on current file (launched on save)
 :EnToggleFullType       set ensime to return either shallow types or full types
 :EnCompleteFunc         get an omnicompletion menu (via ctrl+X ctrl+O) - blocking
 :EnFormatSource         format file based (see https://github.com/ensime/ensime-emacs/wiki/Scalariform-Preferences)
-:EnSetBreak             add a breakpoint on current line
 :EnRename               rename symbol under cursor
+:EnInline               inline the definition of the local symbol under cursor
+:EnSuggestImport        suggests imports
+:EnSetBreak             add a breakpoint on current line
 :EnClearBreaks          remove all breakpoints
 :EnDebug class          start debugging the specified class
 :EnContinue             continue debugging after pause
