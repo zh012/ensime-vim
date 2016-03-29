@@ -44,9 +44,11 @@ commands = {
     "split_window": "split {}",
     "vert_split_window": "vsplit {}",
     "new_vertical_window": "{}vnew {}",
+    "new_vertical_scratch": "{}vnew {} | setlocal nobuflisted buftype=nofile bufhidden=wipe noswapfile",
     "doautocmd_bufleave": "doautocmd BufLeave",
     "doautocmd_bufreadenter": "doautocmd BufRead,BufEnter",
     "filetype": "&filetype",
+    "set_filetype": "set filetype={}",
     "go_to_char": "goto {}",
     "set_ensime_completion": "set omnifunc=EnCompleteFunc",
     "set_quickfix_list": "call setqflist({}, '')",
@@ -423,14 +425,16 @@ class EnsimeClient(object):
         # Create a new buffer 45 columns wide
         def add(member, indentLevel):
             indent = "  " * indentLevel
-            line = indent + member["name"]
+            t = member["declAs"]["typehint"] if member["typehint"] == "BasicTypeInfo" else ""
+            line = "{} {}: {}".format(indent, t, member["name"])
             self.vim.command(commands["append_line"].format("\'$\'", str(line)))
             if indentLevel < 4:
                 for m in member["members"]:
                     add(m, indentLevel + 1)
 
-        cmd = commands["new_vertical_window"].format(str(45),package)
+        cmd = commands["new_vertical_scratch"].format(str(45),"package_info")
         self.vim.command(cmd)
+        self.vim.command(commands["set_filetype"].format("package_info"))
         self.vim.command(commands["append_line"].format("\'$\'", str(package)))
         for member in payload["members"]:
             add(member, 1)
