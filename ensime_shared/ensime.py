@@ -400,9 +400,13 @@ class EnsimeClient(object):
         self.handlers["DebugOutputEvent"] = self.handle_debug_output
         self.handlers["DebugBreakEvent"] = self.handle_debug_break
         self.handlers["DebugBacktrace"] = self.handle_debug_backtrace
+        self.handlers["DebugVmError"] = self.handle_debug_vm_error
         self.handlers["RefactorDiffEffect"] = self.apply_refactor
         self.handlers["ImportSuggestions"] = self.handle_import_suggestions
         self.handlers["PackageInfo"] = self.handle_package_info
+
+    def handle_debug_vm_error(self, call_id, payload):
+        self.vim.command(commands['display_message'].format("Error. Check ensime-vim log for details."))
 
     def handle_import_suggestions(self, call_id, payload):
         imports = list(sorted(set(suggestion['name'].replace('$', '.') for suggestions in payload['symLists'] for suggestion in suggestions)))
@@ -744,15 +748,20 @@ class EnsimeClient(object):
 
     def debug_start(self, args, range=None):
         self.log("debug_start: in")
-        if len(args) > 0:
+        if len(args) > 1:
             self.send_request({
-                "typehint": "DebugStartReq",
-                "commandLine": args[0]})
+                "typehint": "DebugAttachReq",
+                "hostname": args[0],
+                "port" :    args[1]})
         else:
-            self.message("missing_debug_class")
+            self.send_request({
+                "typehint": "DebugAttachReq",
+                "hostname": "localhost",
+                "port" :    "5005"})
+
 
     def debug_continue(self, args, range=None):
-        self.log("debug_start: in")
+        self.log("debug_continue: in")
         self.send_request({
             "typehint": "DebugContinueReq",
             "threadId": self.debug_thread_id})

@@ -50,7 +50,7 @@ They should be ran from
 :EnSuggestImport        suggests imports
 :EnSetBreak             add a breakpoint on current line
 :EnClearBreaks          remove all breakpoints
-:EnDebug class          start debugging the specified class
+:EnDebug host port      attach to the specified debugging target
 :EnContinue             continue debugging after pause
 :EnBacktrace            show backtrace when execution is paused in a new buffer
 
