@@ -136,17 +136,9 @@ class NeovimEnsime(Ensime):
     def au_vim_leave(self, *args, **kwargs):
         super(NeovimEnsime, self).au_vim_leave(*args, **kwargs)
 
-    @neovim.autocmd('BufEnter', **autocmd_params)
-    def au_buf_enter(self, *args, **kwargs):
-        super(NeovimEnsime, self).au_buf_enter(*args, **kwargs)
-
     @neovim.autocmd('BufLeave', **autocmd_params)
     def au_buf_leave(self, *args, **kwargs):
         super(NeovimEnsime, self).au_buf_leave(*args, **kwargs)
-
-    @neovim.autocmd('BufWritePost', **autocmd_params)
-    def au_buf_write_post(self, *args, **kwargs):
-        super(NeovimEnsime, self).au_buf_write_post(*args, **kwargs)
 
     @neovim.autocmd('CursorHold', **autocmd_params)
     def au_cursor_hold(self, *args, **kwargs):

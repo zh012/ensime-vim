@@ -56,7 +56,6 @@ They should be ran from
 
 CUSTOMIZING
 
-
 If you want to use another highlight style for error, use:
 
     :let EnErrorStyle='YourHighlight'
@@ -64,6 +63,12 @@ If you want to use another highlight style for error, use:
 For example:
 
     :let EnErrorStyle='Underlined'
+
+Use vim's autocommand events to trigger type checks automatically, e.g:
+
+    :autocmd BufWritePost *.scala :EnTypeCheck
+
+This triggers type checks after each buffer write of a Scala file. Check :h autocmd-events-abc for a comprehensive event list.
 
 UPGRADING ENSIME SERVER
 

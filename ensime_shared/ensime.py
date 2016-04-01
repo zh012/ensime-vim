@@ -934,11 +934,6 @@ class EnsimeClient(object):
         self.log("buffer_leave: {}".format(filename))
         self.clean_errors()
 
-    def buffer_enter(self, filename):
-        """User has reopened this buffer."""
-        if self.vim.eval("&mod") == '0':
-            self.type_check(filename)
-
     def type_check(self, filename):
         """Update type checking when user saves buffer."""
         self.log("type_check: in")
@@ -1268,17 +1263,9 @@ class Ensime(object):
     def au_vim_leave(self, client, filename):
         self.teardown()
 
-    @execute_with_client(quiet=True)
-    def au_buf_enter(self, client, filename):
-        client.buffer_enter(filename)
-
     @execute_with_client()
     def au_buf_leave(self, client, filename):
         client.buffer_leave(filename)
-
-    @execute_with_client()
-    def au_buf_write_post(self, client, filename):
-        client.type_check(filename)
 
     @execute_with_client()
     def au_cursor_hold(self, client, filename):
