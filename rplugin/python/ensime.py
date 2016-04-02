@@ -68,6 +68,10 @@ class NeovimEnsime(Ensime):
     def com_en_declaration_split(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_declaration_split(*args, **kwargs)
 
+    @neovim.command('EnSymbolByName', **command_params)
+    def com_en_symbol_by_name(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_symbol_by_name(*args, **kwargs)
+
     @neovim.command('EnSymbol', **command_params)
     def com_en_symbol(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_symbol(*args, **kwargs)
@@ -119,6 +123,10 @@ class NeovimEnsime(Ensime):
     @neovim.command('EnRename', **command_params)
     def com_en_rename(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_rename(*args, **kwargs)
+
+    @neovim.command('EnPackageDecl', **command_params)
+    def com_en_package_decl(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_package_decl(*args, **kwargs)
 
     @neovim.command('EnInline', **command_params)
     def com_en_inline(self, *args, **kwargs):

@@ -54,6 +54,14 @@ They should be ran from
 :EnContinue             continue debugging after pause
 :EnBacktrace            show backtrace when execution is paused in a new buffer
 
+PACKAGE INSPECTOR                               *ensime-package-inspector*
+
+The package inspector is accessed using the :EnShowPackage command
+as described above. Once in the inspector buffer, you can jump to
+the definition of a particular symbol by pressing <Space> on the
+symbol's line. There is a bit of a lag from the server, but the 
+symbol's definition will be opened in a new vertial window.
+
 CUSTOMIZING
 
 
