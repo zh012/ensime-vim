@@ -79,6 +79,7 @@ class EnsimeClient(object):
             self.vim_command("highlight_enerror")
             self.vim_command("set_updatetime")
             self.vim_command("set_ensime_completion")
+            self.vim.command("autocmd FileType package_info nnoremap <buffer> <Space> :EnPackageDecl<CR>")
 
         def setup_logger_and_paths():
             """Set up paths and logger."""
@@ -430,7 +431,7 @@ class EnsimeClient(object):
         def add(member, indentLevel):
             indent = "  " * indentLevel
             t = member["declAs"]["typehint"] if member["typehint"] == "BasicTypeInfo" else ""
-            line = "{} {}: {}".format(indent, t, member["name"])
+            line = "{}{}: {}".format(indent, t, member["name"])
             self.vim.command(commands["append_line"].format("\'$\'", str(line)))
             if indentLevel < 4:
                 for m in member["members"]:
@@ -443,11 +444,54 @@ class EnsimeClient(object):
         for member in payload["members"]:
             add(member, 1)
 
+    def open_decl_for_inspector_symbol(self):
+        self.log("open_decl_for_inspector_symbol: in")
+
+        def indent(ln):
+           n = 0
+           for c in ln:
+               if c == ' ':
+                   n += 1
+               else:
+                   break
+           return n/2
+
+        row,col = self.cursor()
+        lines = self.vim.current.buffer[:row]
+        i = indent(lines[-1])
+        fqn = [lines[-1].split()[-1]]
+
+        for ln in reversed(lines):
+            if indent(ln) == i -1:
+                i -= 1
+                fqn.insert(0, ln.split()[-1])
+
+        symbolName = ".".join(fqn)
+        self.symbol_by_name([symbolName])
+
     def to_quickfix_item(self, file_name, line_number, message, tpe):
         return { "filename" : file_name,
          "lnum"     : line_number,
          "text"     : message,
          "type"     : tpe }
+
+    def symbol_by_name(self, args, range=None):
+        self.log("symbol_by_name: in")
+        if not args:
+            msg = commands["display_message"].format("Must provide a fully qualifed symbol name")
+            return
+
+        self.call_options[self.call_id] = {"split": True,
+                                           "vert": True ,
+                                           "open_definition": True }
+        fqn = args[0]
+        req = {
+            "typehint": "SymbolByNameReq",
+            "typeFullName": fqn
+        }
+        if len(args) == 2:
+            req["memberName"] = args[1]
+        self.send_request(req)
 
     def write_quickfix_list(self, qf_list):
         cmd = commands["set_quickfix_list"].format(str(qf_list))
@@ -1193,6 +1237,14 @@ class Ensime(object):
     @execute_with_client()
     def com_en_declaration_split(self, client, args, range=None):
         client.open_declaration_split(args, range)
+
+    @execute_with_client()
+    def com_en_symbol_by_name(self, client, args, range=None):
+        client.symbol_by_name(args, range)
+
+    @execute_with_client()
+    def com_en_package_decl(self, client, args, range=None):
+        client.open_decl_for_inspector_symbol()
 
     @execute_with_client()
     def com_en_symbol(self, client, args, range=None):
