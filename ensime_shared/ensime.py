@@ -1,6 +1,7 @@
 import sys
 import os
 import inspect
+import webbrowser
 
 # Ensime shared imports
 from ensime_shared.error import Error
@@ -595,13 +596,6 @@ class EnsimeClient(object):
 
     def handle_doc_uri(self, call_id, payload):
         """Handler for responses of Doc URIs."""
-        def open_url_browser(url, browser):
-            # If $BROWSER points to a script make
-            # sure that the shebang line is on the top
-            # Cannot block here with a wait() to check success
-            Popen([browser, url], stdout=PIPE, stderr=PIPE)
-            self.log("{} opened {}".format(browser, url))
-
         if not self.en_format_source_id:
             self.log("handle_string_response: received doc path")
             port = self.ensime.http_port()
@@ -611,16 +605,15 @@ class EnsimeClient(object):
             if browse_enabled:
                 log_msg = "handle_string_response: browsing doc path {}"
                 self.log(log_msg.format(url))
-                browser = os.environ.get("BROWSER")
-                if browser:
-                    open_url_browser(url, browser)
-                    prefix_msg = feedback["spawned_browser"]
-                else:
-                    prefix_msg = feedback["manual_doc"]
-                    self.log("handle_string_response: $BROWSER is not set")
+                try:
+                    if webbrowser.open(url):
+                        self.log("opened {}".format(url))
+                except webbrowser.Error, e:
+                    log_msg = "handle_string_response: webbrowser error: {}"
+                    self.log(log_msg.format(e))
+                    self.raw_message(feedback["manual_doc"].format(url))
 
             del self.call_options[call_id]
-            self.raw_message(prefix_msg.format(url))
         else:
             self.vim.current.buffer[:] = \
                 [line.encode('utf-8') for line in payload["text"].split("\n")]
