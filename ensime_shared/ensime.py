@@ -1045,7 +1045,7 @@ class EnsimeClient(object):
         # Make sure any plugin overrides this
         self.vim_command("set_updatetime")
         # Keys with no effect, just retrigger CursorHold
-        self.vim.command("call feedkeys('f\e')")
+        self.vim.command('call feedkeys("f\e")')
 
     def on_cursor_move(self, filename):
         """Handler for event CursorMoved."""
