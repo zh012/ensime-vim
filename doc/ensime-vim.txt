@@ -60,7 +60,11 @@ The package inspector is accessed using the :EnShowPackage command
 as described above. Once in the inspector buffer, you can jump to
 the definition of a particular symbol by pressing <Space> on the
 symbol's line. There is a bit of a lag from the server, but the 
-symbol's definition will be opened in a new vertial window.
+symbol's definition will be opened in a new vertical window.
+
+NOTE: Currently the vertical split is not opened until you navigate away from
+the Package Inspector window to a Scala file. This should be addressed in the
+future.
 
 CUSTOMIZING
 
@@ -76,7 +80,8 @@ Use vim's autocommand events to trigger type checks automatically, e.g:
 
     :autocmd BufWritePost *.scala :EnTypeCheck
 
-This triggers type checks after each buffer write of a Scala file. Check :h autocmd-events-abc for a comprehensive event list.
+This triggers type checks after each buffer write of a Scala file. Check
+|autocmd-events-abc| for a comprehensive event list.
 
 UPGRADING ENSIME SERVER
 
@@ -85,3 +90,5 @@ To upgrade ensime server, just do:
     $ rm -rf ~/.config/classpath_project_ensime
 
 Restart vim en run EnClasspath
+
+ vim:tw=78:ts=4:ft=help:norl:
