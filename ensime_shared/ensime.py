@@ -1082,7 +1082,6 @@ class EnsimeClient(object):
         if str(findstart) == "1":
             row, col, startcol = detect_row_column_start()
 
-            self.vim_command("write_file")
             # Make request to get response ASAP
             self.complete(row, col)
             self.completion_started = True
