@@ -518,8 +518,14 @@ class EnsimeClient(object):
         warn = lambda e: self.message("unknown_symbol")
         with catch(KeyError, warn):
             decl_pos = payload["declPos"]
+            f = decl_pos.get("file")
+            self.log(str(self.call_options[call_id]))
+            display = self.call_options[call_id].get("display")
+            if display and f:
+                self.vim.command(commands["display_message"].format(f))
+
             open_definition = self.call_options[call_id].get("open_definition")
-            if open_definition:
+            if open_definition and f:
                 self.clean_errors()
                 self.vim_command("doautocmd_bufleave")
                 split = self.call_options[call_id].get("split")
@@ -529,10 +535,11 @@ class EnsimeClient(object):
                     key = "vert_split_window" if vert else "split_window"
                 else:
                     key = "edit_file"
-                self.vim.command(commands[key].format(decl_pos["file"]))
+                self.vim.command(commands[key].format(f))
                 self.vim_command("doautocmd_bufreadenter")
                 self.set_position(decl_pos)
                 del self.call_options[call_id]
+
 
     def handle_new_scala_notes_event_with_syntastic(self, call_id, payload):
         """Syntastic specific handler for response `NewScalaNotesEvent`."""
@@ -736,12 +743,16 @@ class EnsimeClient(object):
         self.log("toggle_fulltype: in")
         self.enable_fulltype = not self.enable_fulltype
 
-    def symbol_at_point_req(self, open_definition):
+    def symbol_at_point_req(self, open_definition, display=False):
         opts = self.call_options.get(self.call_id)
         if opts:
             opts["open_definition"] = open_definition
+            opts["display"] = display
         else:
-            self.call_options[self.call_id] = {"open_definition": open_definition}
+            self.call_options[self.call_id] = {
+                "open_definition": open_definition,
+                "display": display
+            }
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
         self.send_request({
             "point": pos + 1,
@@ -769,7 +780,7 @@ class EnsimeClient(object):
 
     def symbol(self, args, range=None):
         self.log("symbol: in")
-        self.symbol_at_point_req(False)
+        self.symbol_at_point_req(False, True)
 
     def suggest_import(self, args, range=None):
         self.log("inspect_type: in")
