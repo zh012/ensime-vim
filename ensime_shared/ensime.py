@@ -81,6 +81,7 @@ class EnsimeClient(object):
             self.vim_command("set_updatetime")
             self.vim_command("set_ensime_completion")
             self.vim.command("autocmd FileType package_info nnoremap <buffer> <Space> :EnPackageDecl<CR>")
+            self.vim.command("autocmd FileType package_info  setlocal splitright")
 
         def setup_logger_and_paths():
             """Set up paths and logger."""
@@ -469,6 +470,7 @@ class EnsimeClient(object):
 
         symbolName = ".".join(fqn)
         self.symbol_by_name([symbolName])
+        self.unqueue(should_wait=True)
 
     def to_quickfix_item(self, file_name, line_number, message, tpe):
         return { "filename" : file_name,
@@ -990,7 +992,7 @@ class EnsimeClient(object):
              "files": [self.path()]})
         self.clean_errors()
 
-    def unqueue(self, filename, timeout=10, should_wait=False):
+    def unqueue(self, timeout=10, should_wait=False):
         """Unqueue all the received ensime responses for a given file."""
         def trigger_callbacks(_json):
             for name in self.receive_callbacks:
@@ -1027,7 +1029,7 @@ class EnsimeClient(object):
         """Unqueue messages and give feedback to user (if necessary)."""
         if self.running and self.ws:
             self.lazy_display_error(filename)
-            self.unqueue(filename)
+            self.unqueue()
 
     def lazy_display_error(self, filename):
         """Display error when user is over it."""
@@ -1098,7 +1100,7 @@ class EnsimeClient(object):
             if self.completion_started:
                 self.vim_command("until_first_char_word")
                 # Unqueing messages until we get suggestions
-                self.unqueue("", timeout=self.completion_timeout, should_wait=True)
+                self.unqueue(timeout=self.completion_timeout, should_wait=True)
                 suggestions = self.suggestions or []
                 self.log("complete_func: suggests in {}".format(suggestions))
                 for m in suggestions:
