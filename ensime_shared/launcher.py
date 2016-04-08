@@ -7,6 +7,7 @@ import time
 import shutil
 
 from ensime_shared.util import Util, catch
+from ensime_shared.vendor import sexpdata
 
 
 class EnsimeProcess(object):
@@ -106,7 +107,7 @@ class EnsimeLauncher(object):
         args = (
             [os.path.join(java_home, "bin", "java")] +
             ["-cp", classpath] +
-            [a for a in java_flags.split(" ") if a != ""] +
+            [a for a in java_flags if a != ""] +
             ["-Densime.config={}".format(conf_path),
              "org.ensime.server.Server"])
         process = subprocess.Popen(
@@ -214,14 +215,40 @@ saveClasspathTask := {
         return src
 
     def parse_conf(self, path):
-        conf = Util.read_file(path).replace("\n", "").replace(
-            "(", " ").replace(")", " ").replace('"', "").split(" :")
-        pattern = re.compile("([^ ]*) *(.*)$")
-        conf = [(m[0], m[1])for m in [pattern.match(x).groups() for x in conf]]
-        result = {}
-        for item in conf:
-            result[item[0]] = item[1]
-        return result
+        def paired(iterable):
+            """s -> (s0, s1), (s2, s3), (s4, s5), ..."""
+            cursor = iter(iterable)
+            return zip(cursor, cursor)
+
+        def unwrap_if_sexp_symbol(datum):
+            """
+            Convert Symbol(':key') to ':key' (Symbol isn't hashable for dict keys).
+            """
+            return datum.value() if isinstance(datum, sexpdata.Symbol) else datum
+
+        def sexp2dict(sexps):
+            """
+            Transforms a nested list structure from sexpdata to dict.
+
+            NOTE: This probably isn't general for all S-expression shapes parsed by
+            sexpdata, focused only on .ensime thus far.
+            """
+            newdict = {}
+
+            # Turn flat list into associative pairs
+            for key, value in paired(sexps):
+                key = str(unwrap_if_sexp_symbol(key)).lstrip(':')
+
+                # Recursively transform nested lists
+                if isinstance(value, list) and value and isinstance(value[0], list):
+                    newdict[key] = [sexp2dict(value[0])]
+                else:
+                    newdict[key] = value
+
+            return newdict
+
+        conf = sexpdata.loads(Util.read_file(path))
+        return sexp2dict(conf)
 
     def reorder_classpath(self, classpath_file):
         """Reorder classpath and put monkeys-jar in the first place."""
