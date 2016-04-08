@@ -53,6 +53,8 @@ They should be ran from
 :EnDebug host port      attach to the specified debugging target
 :EnContinue             continue debugging after pause
 :EnBacktrace            show backtrace when execution is paused in a new buffer
+:EnAddImport            add import statement for given symbol
+:EnOrganizeImports      reorganize (sort and group) import statements
 
 PACKAGE INSPECTOR                               *ensime-package-inspector*
 

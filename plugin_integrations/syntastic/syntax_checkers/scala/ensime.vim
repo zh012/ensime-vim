@@ -16,8 +16,8 @@ endfunction
 function! SyntaxCheckers_scala_ensime_GetHighlightRegex(error)
     if a:error['len']
         let lcol = a:error['col'] - 1
-        let rcol = a:error['col'] + a:error['len']
-        let ret = '\%>' . lcol . 'c\%<' . rcol . 'c'
+        let rcol = a:error['col'] + a:error['len'] - 1
+        let ret = '\%>' . lcol . 'v\%<' . rcol . 'v'
     else
         let ret = ''
     endif
