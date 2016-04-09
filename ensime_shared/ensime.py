@@ -755,6 +755,10 @@ class EnsimeClient(object):
             "file": self.path()})
 
     def inspect_package(self, args):
+        if not args:
+            msg = commands["display_message"].format("Must provide a fully qualifed package name")
+            self.vim.command(msg)
+            return
         self.send_request({
             "typehint": "InspectPackageByPathReq",
             "path": args[0]
