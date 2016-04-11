@@ -2,12 +2,12 @@ import os
 import signal
 import socket
 import subprocess
-import re
 import time
 import shutil
 
+import sexpdata
+
 from ensime_shared.util import Util, catch
-from ensime_shared.vendor import sexpdata
 
 
 class EnsimeProcess(object):
