@@ -35,6 +35,8 @@ command! -nargs=* -range EnContinue call ensime#com_en_debug_continue([<f-args>]
 command! -nargs=* -range EnBacktrace call ensime#com_en_backtrace([<f-args>], '')
 command! -nargs=0 -range EnClients call ensime#com_en_clients([<f-args>], '')
 command! -nargs=* -range EnToggleFullType call ensime#com_en_toggle_fulltype([<f-args>], '')
+command! -nargs=* -range EnOrganizeImports call ensime#com_en_organize_imports([<f-args>], '')
+command! -nargs=* -range EnAddImport call ensime#com_en_add_import([<f-args>], '')
 
 function! EnCompleteFunc(a, b) abort
     return ensime#fun_en_complete_func(a:a, a:b)

@@ -63,8 +63,6 @@ commands = {
     "syntastic_show_notes": "silent SyntasticCheck ensime",
     "get_cursor_word": 'expand("<cword>")',
     "select_item_list": 'inputlist({})',
-    "find_first_import": 'searchpos("^import", "n")',
-    "append_line": 'call append({}, {!r})',
 }
 
 
@@ -420,10 +418,8 @@ class EnsimeClient(object):
                 ["Select class to import:"] + ["{}. {}".format(num + 1, imp) for (num, imp) in enumerate(imports)]))))
 
             if chosen_import > 0:
-                chosen_import = "import {}".format(imports[chosen_import - 1])
+                self.add_import(imports[chosen_import - 1])
 
-                (line, _) = self.vim_eval('find_first_import')
-                self.vim.command(commands['append_line'].format((int(line) or 1) - 1, chosen_import))
         else:
             self.vim.command(commands['display_message'].format("No import suggestions found"))
 
@@ -890,6 +886,32 @@ class EnsimeClient(object):
             { "interactive": False }
         )
 
+    def organize_imports(self, args, range=None):
+        self.vim_command("write_file")
+        current_file = self.path()
+        self.send_refactor_request(
+            "RefactorReq",
+            {
+                "typehint": "OrganiseImportsRefactorDesc",
+                "file": current_file,
+            },
+            {"interactive": False}
+        )
+
+    def add_import(self, name, range=None):
+        if not name:
+            name = self.ask_input("Qualified name to import: ")
+        self.vim_command("write_file")
+        current_file = self.path()
+        self.send_refactor_request(
+            "RefactorReq",
+            {
+                "typehint": "AddImportRefactorDesc",
+                "file": current_file,
+                "qualifiedName": name
+            },
+            {"interactive": False}
+        )
 
     def symbol_search(self):
         """Search for symbols matching a set of keywords"""
@@ -920,7 +942,7 @@ class EnsimeClient(object):
 
     def apply_refactor(self, call_id, payload):
         """Apply a refactor depending on its type."""
-        if payload["refactorType"]["typehint"] in ["Rename", "InlineLocal"]:
+        if payload["refactorType"]["typehint"] in ["Rename", "InlineLocal", "AddImport", "OrganizeImports"]:
             diff_filepath = payload["diff"]
             path = self.path()
             bname = os.path.basename(path)
@@ -1301,6 +1323,14 @@ class Ensime(object):
     @execute_with_client()
     def com_en_inline(self, client, args, range=None):
         client.inlineLocal(None)
+
+    @execute_with_client()
+    def com_en_organize_imports(self, client, args, range=None):
+        client.organize_imports(args, range)
+
+    @execute_with_client()
+    def com_en_add_import(self, client, args, range=None):
+        client.add_import(None)
 
     @execute_with_client()
     def com_en_clients(self, client, args, range=None):

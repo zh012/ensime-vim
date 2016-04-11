@@ -132,6 +132,14 @@ class NeovimEnsime(Ensime):
     def com_en_inline(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_inline(*args, **kwargs)
 
+    @neovim.command('EnOrganizeImports', **command_params)
+    def com_en_organize_imports(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_organize_imports(*args, **kwargs)
+
+    @neovim.command('EnAddImport', **command_params)
+    def com_en_add_import(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_add_import(*args, **kwargs)
+
     @neovim.command('EnClients', range='', nargs='0', sync=True)
     def com_en_clients(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_clients(*args, **kwargs)
