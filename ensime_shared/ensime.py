@@ -47,7 +47,7 @@ commands = {
     "new_vertical_window": "{}vnew {}",
     "new_vertical_scratch": "{}vnew {} | setlocal nobuflisted buftype=nofile bufhidden=wipe noswapfile",
     "doautocmd_bufleave": "doautocmd BufLeave",
-    "doautocmd_bufreadenter": "doautocmd BufRead,BufEnter",
+    "doautocmd_bufreadenter": "doautocmd BufReadPre,BufRead,BufEnter",
     "filetype": "&filetype",
     "set_filetype": "set filetype={}",
     "go_to_char": "goto {}",
@@ -60,7 +60,7 @@ commands = {
     "syntastic_enable": "if exists('g:SyntasticRegistry') | let &runtimepath .= ',' . {!r} | endif",
     "syntastic_append_notes": 'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif | let b:ensime_scala_notes += {}',
     "syntastic_reset_notes": 'let b:ensime_scala_notes = []',
-    "syntastic_show_notes": "silent SyntasticCheck ensime",
+    "syntastic_show_notes": "silent! SyntasticCheck ensime",
     "get_cursor_word": 'expand("<cword>")',
     "select_item_list": 'inputlist({})',
 }
