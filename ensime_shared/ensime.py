@@ -69,7 +69,23 @@ commands = {
 
 
 class EnsimeClient(DebuggerClient, object):
-    """Represents an Ensime client per ensime configuration path."""
+    """Represents an Ensime client per ensime configuration path.
+
+    Upon construction, this will either connect to an existing ensime server, or
+    else start up a new ensime service to talk to.
+
+    Communication with the server is done over a websocket (`self.ws`). Messages
+    are sent to the server in the calling thread, while messages are received on
+    a separate background thread and enqueued in `self.queue` upon receipt.
+
+    Each call to the server contains a `callId` field with an integer ID,
+    generated from `self.call_id`. Responses echo back the `callId` field so
+    that appropriate handlers can be invoked.
+
+    Responses also contain a `typehint` field in their `payload` field, which
+    contains the type of the response. This is used to key into `self.handlers`,
+    which stores the a handler per response type.
+    """
 
     def __init__(self, vim, launcher, config_path):
         def setup_vim():
@@ -120,6 +136,7 @@ class EnsimeClient(DebuggerClient, object):
 
         self.matches = []
         self.errors = []
+        # Queue for messages received from the ensime server.
         self.queue = Queue()
         self.suggestions = None
         self.completion_timeout = 10  # seconds
@@ -284,6 +301,7 @@ class EnsimeClient(DebuggerClient, object):
                 self.ensime_server = gconfig["ensime_server"].format(port)
             with catch(Exception, disable_completely):
                 from websocket import create_connection
+                # Use the default timeout (no timeout).
                 self.ws = create_connection(self.ensime_server)
             if self.ws:
                 self.send_request({"typehint": "ConnectionInfoReq"})
@@ -293,6 +311,7 @@ class EnsimeClient(DebuggerClient, object):
 
     def shutdown_server(self):
         """Shut down server if it is alive."""
+        self.log("shutdown_server: in")
         if self.ensime and self.toggle_teardown:
             self.ensime.stop()
 
