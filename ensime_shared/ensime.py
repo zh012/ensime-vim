@@ -9,6 +9,7 @@ from ensime_shared.util import catch, module_exists, Util
 from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.debugger import DebuggerClient
 from ensime_shared.config import gconfig, feedback
+from ensime_shared.symbol_format import completion_to_suggest, concat_params, concat_tparams
 
 from threading import Thread
 from subprocess import Popen, PIPE
@@ -656,7 +657,7 @@ class EnsimeClient(DebuggerClient, object):
         """Handler for a completion response."""
         completions = payload["completions"]
         self.log("handle_completion_info_list: in")
-        self.suggestions = [self.completion_to_suggest(c) for c in completions]
+        self.suggestions = [completion_to_suggest(c) for c in completions]
         self.log("handle_completion_info_list: {}".format(self.suggestions))
 
     def handle_type_inspect(self, call_id, payload):
@@ -666,6 +667,7 @@ class EnsimeClient(DebuggerClient, object):
         prefix = "( " + ", ".join(ts) + " ) => "
         self.raw_message(prefix + payload["type"]["fullName"])
 
+    # TODO @ktonga reuse completion suggestion formatting logic
     def show_type(self, call_id, payload):
         """Show type of a variable or scala type."""
         tpe = payload["fullName"]
@@ -674,13 +676,14 @@ class EnsimeClient(DebuggerClient, object):
         if args:
             if len(args) > 1:
                 tpes = [x["name"] for x in args]
-                tpe += self.concat_tparams(tpes)
+                tpe += concat_tparams(tpes)
             else:  # is 1
                 tpe += "[{}]".format(args[0]["fullName"])
 
         self.log(feedback["displayed_type"].format(tpe))
         self.raw_message(tpe)
 
+    # TODO @ktonga reuse completion suggestion formatting logic
     def show_ftype(self, call_id, payload):
         """Show the type of a function."""
         self.log("entering")
@@ -694,7 +697,7 @@ class EnsimeClient(DebuggerClient, object):
                 tpe += "("
                 f = lambda x: (x[0], x[1][tname])
                 params = list(map(f, l["params"]))
-                tpe += self.concat_params(params)
+                tpe += concat_params(params)
                 tpe += ")"
             tpe += " => {}".format(rtype["fullName"])
 
@@ -944,37 +947,6 @@ class EnsimeClient(DebuggerClient, object):
             cmd = commands["edit_file"].format(self.path())
             self.vim.command(cmd)
             self.vim_command("doautocmd_bufreadenter")
-
-    def concat_params(self, params):
-        """Return list of params from list of (pname, ptype)."""
-        name_and_types = [": ".join(p) for p in params]
-        return ", ".join(name_and_types)
-
-    def concat_tparams(self, tparams):
-        """Return a valid signature from a list of type parameters."""
-        types = [", ".join(p) for p in tparams]
-        return "[{}]".format(types)
-
-    def formatted_completion_type(self, completion):
-        f_result = completion["typeSig"]["result"]
-        if not completion["isCallable"]:
-            # It's a raw type
-            return f_result
-        elif len(completion["typeSig"]["sections"]) == 0:
-            return f_result
-
-        # It's a function type
-        f_params = completion["typeSig"]["sections"][0]
-        ps = self.concat_params(f_params) if f_params else ""
-        return "({}) => {}".format(ps, f_result)
-
-    def completion_to_suggest(self, completion):
-        """Convert from a completion to a suggestion."""
-        res = {"word": completion["name"],
-               "menu": "[scala]",
-               "kind": self.formatted_completion_type(completion)}
-        self.log("completion_to_suggest: {}".format(res))
-        return res
 
     def send_request(self, request):
         """Send a request to the server."""
