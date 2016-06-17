@@ -114,6 +114,18 @@ class NeovimEnsime(Ensime):
     def com_en_install(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_install(*args, **kwargs)
 
+    @neovim.command('EnDebugStep', **command_params)
+    def com_en_debug_step(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_debug_step(*args, **kwargs)
+
+    @neovim.command('EnDebugStepOut', **command_params)
+    def com_en_debug_step_out(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_debug_step_out(*args, **kwargs)
+
+    @neovim.command('EnDebugNext', **command_params)
+    def com_en_debug_next(self, *args, **kwargs):
+        super(NeovimEnsime, self).com_en_debug_next(*args, **kwargs)
+
     @neovim.command('EnShowPackage', **command_params)
     def com_en_package_inspect(self, *args, **kwargs):
         super(NeovimEnsime, self).com_en_package_inspect(*args, **kwargs)
