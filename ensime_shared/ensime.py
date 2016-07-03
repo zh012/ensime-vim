@@ -10,7 +10,7 @@ from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.debugger import DebuggerClient
 from ensime_shared.typecheck import TypecheckHandler
 from ensime_shared.config import gconfig, feedback, commands
-from ensime_shared.symbol_format import completion_to_suggest, concat_params, concat_tparams
+from ensime_shared.symbol_format import completion_to_suggest
 
 from threading import Thread
 from subprocess import Popen, PIPE
@@ -108,7 +108,10 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         self.completion_timeout = 10  # seconds
         self.completion_started = False
         self.en_format_source_id = None
-        self.enable_fulltype = False
+
+        self.full_types_enabled = False
+        """Whether fully-qualified types are displayed by inspections or not"""
+
         self.toggle_teardown = True
         self.connection_attempts = 0
         self.tmp_diff_folder = "/tmp/ensime-vim/diffs/"
@@ -388,7 +391,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         self.handlers["AnalyzerReadyEvent"] = f_indexer
         self.handlers["NewScalaNotesEvent"] = self.buffer_typechecks
         self.handlers["BasicTypeInfo"] = self.show_type
-        self.handlers["ArrowTypeInfo"] = self.show_ftype
+        self.handlers["ArrowTypeInfo"] = self.show_type
         self.handlers["FullTypeCheckCompleteEvent"] = self.handle_typecheck_complete
         self.handlers["StringResponse"] = self.handle_string_response
         self.handlers["CompletionInfoList"] = self.handle_completion_info_list
@@ -552,12 +555,12 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         if not self.en_format_source_id:
             self.log("handle_string_response: received doc path")
             port = self.ensime.http_port()
-            
+
             url = payload["text"]
-            
-            if not url.startswith("http"): 
+
+            if not url.startswith("http"):
                 url = gconfig["localhost"].format(port, payload["text"])
-            
+
             browse_enabled = self.call_options[call_id].get("browse")
 
             if browse_enabled:
@@ -586,44 +589,19 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
 
     def handle_type_inspect(self, call_id, payload):
         """Handler for responses `TypeInspectInfo`."""
+        style = 'fullName' if self.full_types_enabled else 'name'
         interfaces = payload.get("interfaces")
-        ts = [i["type"]["name"] for i in interfaces]
+        ts = [i["type"][style] for i in interfaces]
         prefix = "( " + ", ".join(ts) + " ) => "
-        self.raw_message(prefix + payload["type"]["fullName"])
+        self.raw_message(prefix + payload["type"][style])
 
     # TODO @ktonga reuse completion suggestion formatting logic
     def show_type(self, call_id, payload):
         """Show type of a variable or scala type."""
-        tpe = payload["fullName"]
-        args = payload["typeArgs"]
-
-        if args:
-            if len(args) > 1:
-                tpes = [x["name"] for x in args]
-                tpe += concat_tparams(tpes)
-            else:  # is 1
-                tpe += "[{}]".format(args[0]["fullName"])
-
-        self.log(feedback["displayed_type"].format(tpe))
-        self.raw_message(tpe)
-
-    # TODO @ktonga reuse completion suggestion formatting logic
-    def show_ftype(self, call_id, payload):
-        """Show the type of a function."""
-        self.log("entering")
-        rtype = payload["resultType"]
-        lparams = payload["paramSections"]
-        tpe = ""
-        tname = "fullName" if self.enable_fulltype else "name"
-
-        if rtype and lparams:
-            for l in lparams:
-                tpe += "("
-                f = lambda x: (x[0], x[1][tname])
-                params = list(map(f, l["params"]))
-                tpe += concat_params(params)
-                tpe += ")"
-            tpe += " => {}".format(rtype["fullName"])
+        if self.full_types_enabled:
+            tpe = payload['fullName']
+        else:
+            tpe = payload['name']
 
         self.log(feedback["displayed_type"].format(tpe))
         self.raw_message(tpe)
@@ -682,7 +660,12 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
 
     def toggle_fulltype(self, args, range=None):
         self.log("toggle_fulltype: in")
-        self.enable_fulltype = not self.enable_fulltype
+        self.full_types_enabled = not self.full_types_enabled
+
+        if self.full_types_enabled:
+            self.message("full_types_enabled_on")
+        else:
+            self.message("full_types_enabled_off")
 
     def symbol_at_point_req(self, open_definition, display=False):
         opts = self.call_options.get(self.call_id)
@@ -731,7 +714,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         self.symbol_at_point_req(False, True)
 
     def suggest_import(self, args, range=None):
-        self.log("inspect_type: in")
+        self.log("suggest_import: in")
         pos = self.get_position(self.cursor()[0], self.cursor()[1])
         word = self.vim_eval('get_cursor_word')
         req = {"point": pos,
