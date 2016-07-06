@@ -4,7 +4,7 @@ import inspect
 import webbrowser
 
 # Ensime shared imports
-from ensime_shared.error import Error
+from ensime_shared.errors import InvalidJavaPathError
 from ensime_shared.util import catch, module_exists, Util
 from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.debugger import DebuggerClient
@@ -54,7 +54,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
             self.vim_command("set_updatetime")
             self.vim_command("set_ensime_completion")
             self.vim.command("autocmd FileType package_info nnoremap <buffer> <Space> :call EnPackageDecl()<CR>")
-            self.vim.command("autocmd FileType package_info  setlocal splitright")
+            self.vim.command("autocmd FileType package_info setlocal splitright")
             super(EnsimeClient, self).__init__()
 
         def setup_logger_and_paths():
@@ -67,7 +67,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
             if not osp.isdir(self.ensime_cache):
                 try:
                     os.mkdir(self.ensime_cache)
-                except OSError as exception:
+                except OSError:
                     self.log_dir = "/tmp/"
             self.log_file = os.path.join(self.log_dir, "ensime-vim.log")
             with open(self.log_file, "w") as f:
@@ -141,7 +141,6 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         if not module_exists("sexpdata"):
             self.tell_module_missing("sexpdata")
 
-
     def log(self, what):
         """Log `what` in a file at the .ensime_cache folder or /tmp."""
         with open(self.log_file, "a") as f:
@@ -198,15 +197,19 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
             if not self.ensime:
                 called_by = inspect.stack()[4][3]
                 self.log(str(inspect.stack()))
-                self.log("setup({}, {}) called by {}()"
+                self.log("setup(quiet={}, create_classpath={}) called by {}()"
                          .format(quiet, create_classpath, called_by))
-                no_classpath = self.launcher.no_classpath_file(
-                    self.config_path)
+                no_classpath = not os.path.exists(self.launcher.classpath_file)
                 if not create_classpath and no_classpath:
                     if not quiet:
                         self.message("warn_classpath")
                     return False
-                self.ensime = self.launcher.launch(self.config_path)
+
+                try:
+                    self.ensime = self.launcher.launch()
+                except InvalidJavaPathError:
+                    self.message('invalid_java')  # TODO: also disable plugin
+
             return bool(self.ensime)
 
         def ready_to_connect():
@@ -376,7 +379,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
 
     def message(self, key):
         """Display a message already defined in `feedback`."""
-        msg = feedback[key]
+        msg = '[ensime] ' + feedback[key]
         self.raw_message(msg)
 
     def register_responses_handlers(self):
@@ -569,7 +572,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
                 try:
                     if webbrowser.open(url):
                         self.log("opened {}".format(url))
-                except webbrowser.Error, e:
+                except webbrowser.Error as e:
                     log_msg = "handle_string_response: webbrowser error: {}"
                     self.log(log_msg.format(e))
                     self.raw_message(feedback["manual_doc"].format(url))
@@ -1028,7 +1031,6 @@ class Ensime(object):
         self.vim = vim
         # Map ensime configs to a ensime clients
         self.clients = {}
-        self.launcher = EnsimeLauncher(vim)
         self.init_integrations()
 
     def init_integrations(self):
@@ -1095,7 +1097,8 @@ class Ensime(object):
         if abs_path in self.clients:
             client = self.clients[abs_path]
         elif create_client:
-            client = EnsimeClient(self.vim, self.launcher, config_path)
+            launcher = EnsimeLauncher(self.vim, config_path)
+            client = EnsimeClient(self.vim, launcher, config_path)
             if client.setup(quiet=quiet, create_classpath=create_classpath):
                 self.clients[abs_path] = client
         return client
