@@ -28,6 +28,7 @@ feedback = {
     "typechecking": "Typechecking...",
     "unhandled_response": "Response {} has not been handled",
     "unknown_symbol": "Symbol not found",
+    "handler_not_implemented": "The feature {} is not supported by the current Ensime server version {}"
 }
 
 commands = {

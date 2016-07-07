@@ -1,16 +1,15 @@
 import sys
 import os
 import inspect
-import webbrowser
 
 # Ensime shared imports
 from ensime_shared.errors import InvalidJavaPathError
 from ensime_shared.util import catch, module_exists, Util
 from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.debugger import DebuggerClient
+from ensime_shared.protocol_handler import ProtocolHandlerV1, ProtocolHandlerV2
 from ensime_shared.typecheck import TypecheckHandler
 from ensime_shared.config import gconfig, feedback, commands
-from ensime_shared.symbol_format import completion_to_suggest
 
 from threading import Thread
 from subprocess import Popen, PIPE
@@ -131,9 +130,6 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         thread = Thread(target=self.queue_poll, args=())
         thread.daemon = True
         thread.start()
-
-        self.handlers = {}
-        self.register_responses_handlers()
 
         self.websocket_exists = module_exists("websocket")
         if not self.websocket_exists:
@@ -384,66 +380,6 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         msg = '[ensime] ' + feedback[key]
         self.raw_message(msg)
 
-    def register_responses_handlers(self):
-        """Register handlers for responses from the server.
-
-        A handler must accept only one parameter: `payload`.
-        """
-        self.handlers["SymbolInfo"] = self.handle_symbol_info
-        f_indexer = lambda ci, p: self.message("indexer_ready")
-        self.handlers["IndexerReadyEvent"] = f_indexer
-        f_indexer = lambda ci, p: self.message("analyzer_ready")
-        self.handlers["AnalyzerReadyEvent"] = f_indexer
-        self.handlers["NewScalaNotesEvent"] = self.buffer_typechecks
-        self.handlers["BasicTypeInfo"] = self.show_type
-        self.handlers["ArrowTypeInfo"] = self.show_type
-        self.handlers["FullTypeCheckCompleteEvent"] = self.handle_typecheck_complete
-        self.handlers["StringResponse"] = self.handle_string_response
-        self.handlers["CompletionInfoList"] = self.handle_completion_info_list
-        self.handlers["TypeInspectInfo"] = self.handle_type_inspect
-        self.handlers["SymbolSearchResults"] = self.handle_symbol_search
-        self.handlers["DebugOutputEvent"] = self.handle_debug_output
-        self.handlers["DebugBreakEvent"] = self.handle_debug_break
-        self.handlers["DebugBacktrace"] = self.handle_debug_backtrace
-        self.handlers["DebugVmError"] = self.handle_debug_vm_error
-        self.handlers["RefactorDiffEffect"] = self.apply_refactor
-        self.handlers["ImportSuggestions"] = self.handle_import_suggestions
-        self.handlers["PackageInfo"] = self.handle_package_info
-
-    def handle_debug_vm_error(self, call_id, payload):
-        self.vim.command(commands['display_message'].format("Error. Check ensime-vim log for details."))
-
-    def handle_import_suggestions(self, call_id, payload):
-        imports = list(sorted(set(suggestion['name'].replace('$', '.') for suggestions in payload['symLists'] for suggestion in suggestions)))
-        if imports:
-            chosen_import = int(self.vim.eval(commands['select_item_list'].format(json.dumps(
-                ["Select class to import:"] + ["{}. {}".format(num + 1, imp) for (num, imp) in enumerate(imports)]))))
-
-            if chosen_import > 0:
-                self.add_import(imports[chosen_import - 1])
-
-        else:
-            self.vim.command(commands['display_message'].format("No import suggestions found"))
-
-    def handle_package_info(self, call_id, payload):
-        package = payload["fullName"]
-        # Create a new buffer 45 columns wide
-        def add(member, indentLevel):
-            indent = "  " * indentLevel
-            t = member["declAs"]["typehint"] if member["typehint"] == "BasicTypeInfo" else ""
-            line = "{}{}: {}".format(indent, t, member["name"])
-            self.vim.command(commands["append_line"].format("\'$\'", str(line)))
-            if indentLevel < 4:
-                for m in member["members"]:
-                    add(m, indentLevel + 1)
-
-        cmd = commands["new_vertical_scratch"].format(str(45),"package_info")
-        self.vim.command(cmd)
-        self.vim.command(commands["set_filetype"].format("package_info"))
-        self.vim.command(commands["append_line"].format("\'$\'", str(package)))
-        for member in payload["members"]:
-            add(member, 1)
-
     def open_decl_for_inspector_symbol(self):
         self.log("open_decl_for_inspector_symbol: in")
 
@@ -498,128 +434,6 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
         cmd = commands["set_quickfix_list"].format(str(qf_list))
         self.vim.command(cmd)
         self.vim_command("open_quickfix")
-
-    def handle_symbol_search(self, call_id, payload):
-        """Handler for symbol search results"""
-        self.log(payload)
-        syms = payload["syms"]
-        qfList = []
-        for sym in syms:
-            p = sym.get("pos")
-            if p:
-                item = self.to_quickfix_item(str(p["file"]),
-                                            p["line"],
-                                            str(sym["name"]),
-                                            "info")
-                qfList.append(item)
-        self.write_quickfix_list(qfList)
-
-    def handle_symbol_info(self, call_id, payload):
-        """Handler for response `SymbolInfo`."""
-        warn = lambda e: self.message("unknown_symbol")
-        with catch(KeyError, warn):
-            decl_pos = payload["declPos"]
-            f = decl_pos.get("file")
-            self.log(str(self.call_options[call_id]))
-            display = self.call_options[call_id].get("display")
-            if display and f:
-                self.vim.command(commands["display_message"].format(f))
-
-            open_definition = self.call_options[call_id].get("open_definition")
-            if open_definition and f:
-                self.clean_errors()
-                self.vim_command("doautocmd_bufleave")
-                split = self.call_options[call_id].get("split")
-                vert = self.call_options[call_id].get("vert")
-                key = ""
-                if split:
-                    key = "vert_split_window" if vert else "split_window"
-                else:
-                    key = "edit_file"
-                self.vim.command(commands[key].format(f))
-                self.vim_command("doautocmd_bufreadenter")
-                self.set_position(decl_pos)
-                del self.call_options[call_id]
-
-
-
-
-    def handle_string_response(self, call_id, payload):
-        """Handler for response `StringResponse`.
-
-        This is the response for the following requests:
-          1. `DocUriAtPointReq` or `DocUriForSymbolReq`
-          2. `DebugToStringReq`
-          3. `FormatOneSourceReq`
-        """
-        self.log(str(payload))
-        self.handle_doc_uri(call_id, payload)
-
-    def handle_doc_uri(self, call_id, payload):
-        """Handler for responses of Doc URIs."""
-        if not self.en_format_source_id:
-            self.log("handle_string_response: received doc path")
-            port = self.ensime.http_port()
-
-            url = payload["text"]
-
-            if not url.startswith("http"):
-                url = gconfig["localhost"].format(port, payload["text"])
-
-            browse_enabled = self.call_options[call_id].get("browse")
-
-            if browse_enabled:
-                log_msg = "handle_string_response: browsing doc path {}"
-                self.log(log_msg.format(url))
-                try:
-                    if webbrowser.open(url):
-                        self.log("opened {}".format(url))
-                except webbrowser.Error as e:
-                    log_msg = "handle_string_response: webbrowser error: {}"
-                    self.log(log_msg.format(e))
-                    self.raw_message(feedback["manual_doc"].format(url))
-
-            del self.call_options[call_id]
-        else:
-            self.vim.current.buffer[:] = \
-                [line.encode('utf-8') for line in payload["text"].split("\n")]
-            self.en_format_source_id = None
-
-    def handle_completion_info_list(self, call_id, payload):
-        """Handler for a completion response."""
-        completions = payload["completions"]
-        self.log("handle_completion_info_list: in")
-        self.suggestions = [completion_to_suggest(c) for c in completions]
-        self.log("handle_completion_info_list: {}".format(self.suggestions))
-
-    def handle_type_inspect(self, call_id, payload):
-        """Handler for responses `TypeInspectInfo`."""
-        style = 'fullName' if self.full_types_enabled else 'name'
-        interfaces = payload.get("interfaces")
-        ts = [i["type"][style] for i in interfaces]
-        prefix = "( " + ", ".join(ts) + " ) => "
-        self.raw_message(prefix + payload["type"][style])
-
-    # TODO @ktonga reuse completion suggestion formatting logic
-    def show_type(self, call_id, payload):
-        """Show type of a variable or scala type."""
-        if self.full_types_enabled:
-            tpe = payload['fullName']
-        else:
-            tpe = payload['name']
-
-        self.log(feedback["displayed_type"].format(tpe))
-        self.raw_message(tpe)
-
-    def handle_incoming_response(self, call_id, payload):
-        """Get a registered handler for a given response and execute it."""
-        self.log("handle_incoming_response: in {}".format(payload))
-        typehint = payload["typehint"]
-        handler = self.handlers.get(typehint)
-        if handler:
-            handler(call_id, payload)
-        else:
-            self.log(feedback["unhandled_response"].format(payload))
 
     def complete(self, row, col):
         self.log("complete: in")
@@ -1016,6 +830,18 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
             return result
 
 
+class EnsimeClientV1(ProtocolHandlerV1, EnsimeClient):
+    def __init__(self, *args, **kwargs):
+        ProtocolHandlerV1.__init__(self)
+        EnsimeClient.__init__(self, *args, **kwargs)
+
+
+class EnsimeClientV2(ProtocolHandlerV2, EnsimeClient):
+    def __init__(self, *args, **kwargs):
+        ProtocolHandlerV2.__init__(self)
+        EnsimeClient.__init__(self, *args, **kwargs)
+
+
 def execute_with_client(quiet=False,
                         bootstrap_server=False,
                         create_client=True):
@@ -1038,6 +864,8 @@ class Ensime(object):
 
     def __init__(self, vim):
         self.vim = vim
+        # TODO @ktonga populate from setting
+        self.server_v2 = False
         # Map ensime configs to a ensime clients
         self.clients = {}
         self.init_integrations()
@@ -1106,11 +934,17 @@ class Ensime(object):
         if abs_path in self.clients:
             client = self.clients[abs_path]
         elif create_client:
-            launcher = EnsimeLauncher(self.vim, config_path)
-            client = EnsimeClient(self.vim, launcher, config_path)
+            launcher = EnsimeLauncher(self.vim, config_path, self.server_v2)
+            client = self.do_create_client(launcher, config_path)
             if client.setup(quiet=quiet, bootstrap_server=bootstrap_server):
                 self.clients[abs_path] = client
         return client
+
+    def do_create_client(self, launcher, config_path):
+        if self.server_v2:
+            return EnsimeClientV2(self.vim, launcher, config_path)
+        else:
+            return EnsimeClientV1(self.vim, launcher, config_path)
 
     def is_scala_file(self):
         cmd = commands["filetype"]
