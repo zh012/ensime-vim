@@ -866,11 +866,17 @@ class Ensime(object):
 
     def __init__(self, vim):
         self.vim = vim
-        # TODO @ktonga populate from setting
-        self.server_v2 = False
         # Map ensime configs to a ensime clients
         self.clients = {}
         self.init_integrations()
+
+    def init_settings(self):
+        self.server_v2 = bool(self.get_setting('server_v2', 0))
+
+    def get_setting(self, key, default):
+        gkey = "g:ensime_{}".format(key)
+        key_exists = self.vim.eval("exists('{}')".format(gkey)) 
+        return self.vim.eval(gkey) if key_exists else default
 
     def init_integrations(self):
         syntastic_runtime = os.path.abspath(
@@ -936,6 +942,7 @@ class Ensime(object):
         if abs_path in self.clients:
             client = self.clients[abs_path]
         elif create_client:
+            self.init_settings()
             client = self.do_create_client(config_path)
             if client.setup(quiet=quiet, bootstrap_server=bootstrap_server):
                 self.clients[abs_path] = client
