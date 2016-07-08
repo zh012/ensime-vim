@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import webbrowser
 import json
 
@@ -6,6 +8,11 @@ from ensime_shared.util import catch
 from ensime_shared.symbol_format import completion_to_suggest
 
 class ProtocolHandler(object):
+    """Mixin for common behavior of handling ENSIME protocol responses.
+
+    Actual handler implementations are abstract and should be implemented by a
+    subclass. Requires facilities of an ``EnsimeClient``.
+    """
 
     def __init__(self):
         self.handlers = {}
@@ -87,9 +94,7 @@ class ProtocolHandler(object):
 
 
 class ProtocolHandlerV1(ProtocolHandler):
-
-    def __init__(self):
-        super(ProtocolHandlerV1, self).__init__()
+    """Implements response handlers for the v1 ENSIME Jerky protocol."""
 
     def handle_indexer_ready(self, call_id, payload):
         self.message("indexer_ready")
@@ -242,8 +247,4 @@ class ProtocolHandlerV1(ProtocolHandler):
 
 
 class ProtocolHandlerV2(ProtocolHandlerV1):
-
-    def __init__(self):
-        super(ProtocolHandlerV2, self).__init__()
-
-
+    """Implements response handlers for the v2 ENSIME Jerky protocol."""

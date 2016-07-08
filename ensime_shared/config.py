@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import os
 
 BOOTSTRAPS_ROOT = os.path.join(os.environ['HOME'], '.config/ensime-vim/')

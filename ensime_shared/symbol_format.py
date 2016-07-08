@@ -1,4 +1,9 @@
-# Funcions for symbols formatting
+# coding: utf-8
+
+"""
+Functions for symbols formatting.
+"""
+
 
 def completion_to_suggest(completion):
     """Convert from a completion to a suggestion."""

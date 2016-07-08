@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import sys
 import os
 import inspect
@@ -7,7 +9,7 @@ from ensime_shared.errors import InvalidJavaPathError
 from ensime_shared.util import catch, module_exists, Util
 from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.debugger import DebuggerClient
-from ensime_shared.protocol_handler import ProtocolHandlerV1, ProtocolHandlerV2
+from ensime_shared.protocol_handler import ProtocolHandler, ProtocolHandlerV1, ProtocolHandlerV2
 from ensime_shared.typecheck import TypecheckHandler
 from ensime_shared.config import gconfig, feedback, commands
 
@@ -24,11 +26,15 @@ if sys.version_info > (3, 0):
 else:
     from Queue import Queue
 
-class EnsimeClient(TypecheckHandler, DebuggerClient, object):
-    """Represents an Ensime client per ensime configuration path.
+class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
+    """An ENSIME client for a project configuration path (``.ensime``).
 
-    Upon construction, this will either connect to an existing ensime server, or
-    else start up a new ensime service to talk to.
+    This is a base class with an abstract ProtocolHandler – you will
+    need to provide a concrete one or use a ready-mixed subclass like
+    ``EnsimeClientV1``.
+
+    Once constructed, a client instance can either connect to an existing
+    ENSIME server or launch a new one with a call to the ``setup()`` method.
 
     Communication with the server is done over a websocket (`self.ws`). Messages
     are sent to the server in the calling thread, while messages are received on
@@ -831,15 +837,11 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, object):
 
 
 class EnsimeClientV1(ProtocolHandlerV1, EnsimeClient):
-    def __init__(self, *args, **kwargs):
-        ProtocolHandlerV1.__init__(self)
-        EnsimeClient.__init__(self, *args, **kwargs)
+    """An ENSIME client for the v1 Jerky protocol."""
 
 
 class EnsimeClientV2(ProtocolHandlerV2, EnsimeClient):
-    def __init__(self, *args, **kwargs):
-        ProtocolHandlerV2.__init__(self)
-        EnsimeClient.__init__(self, *args, **kwargs)
+    """An ENSIME client for the v2 Jerky protocol."""
 
 
 def execute_with_client(quiet=False,
