@@ -9,7 +9,7 @@ from ensime_shared.errors import InvalidJavaPathError
 from ensime_shared.util import catch, module_exists, Util
 from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.debugger import DebuggerClient
-from ensime_shared.protocol_handler import ProtocolHandler, ProtocolHandlerV1, ProtocolHandlerV2
+from ensime_shared.protocol import ProtocolHandler, ProtocolHandlerV1, ProtocolHandlerV2
 from ensime_shared.typecheck import TypecheckHandler
 from ensime_shared.config import gconfig, feedback, commands
 
@@ -936,13 +936,13 @@ class Ensime(object):
         if abs_path in self.clients:
             client = self.clients[abs_path]
         elif create_client:
-            launcher = EnsimeLauncher(self.vim, config_path, self.server_v2)
-            client = self.do_create_client(launcher, config_path)
+            client = self.do_create_client(config_path)
             if client.setup(quiet=quiet, bootstrap_server=bootstrap_server):
                 self.clients[abs_path] = client
         return client
 
-    def do_create_client(self, launcher, config_path):
+    def do_create_client(self, config_path):
+        launcher = EnsimeLauncher(self.vim, config_path, self.server_v2)
         if self.server_v2:
             return EnsimeClientV2(self.vim, launcher, config_path)
         else:
