@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import os
 
 BOOTSTRAPS_ROOT = os.path.join(os.environ['HOME'], '.config/ensime-vim/')
@@ -11,10 +13,10 @@ gconfig = {
 feedback = {
     "analyzer_ready": "Analyzer is ready",
     "displayed_type": "The type {} has been displayed",
-    "failed_refactoring":
-        "The refactoring could not be applied (more info at logs)",
-    "full_types_enabled_on": "Qualified type display enabled",
+    "failed_refactoring": "The refactoring could not be applied (more info at logs)",
     "full_types_enabled_off": "Qualified type display disabled",
+    "full_types_enabled_on": "Qualified type display enabled",
+    "handler_not_implemented": "The feature {} is not supported by the current Ensime server version {}",
     "indexer_ready": "Indexer is ready",
     "invalid_java": "Java not found or not executable, verify :java-home in your .ensime config",
     "manual_doc": "Go to {}",
