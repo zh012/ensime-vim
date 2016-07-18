@@ -4,6 +4,7 @@ import json
 
 from ensime_shared.config import feedback
 
+
 class DebuggerClient(object):
     """This is the implementation of the Ensime debugger client, it must be mixed in
        with the EnsimeClient to be useful."""
@@ -45,12 +46,12 @@ class DebuggerClient(object):
             self.send_request({
                 "typehint": "DebugAttachReq",
                 "hostname": args[0],
-                "port" :    args[1]})
+                "port": args[1]})
         else:
             self.send_request({
                 "typehint": "DebugAttachReq",
                 "hostname": "localhost",
-                "port" :    "5005"})
+                "port": "5005"})
 
     def debug_continue(self, args, range=None):
         self.log("debug_continue: in")
@@ -64,4 +65,3 @@ class DebuggerClient(object):
             "typehint": "DebugBacktraceReq",
             "threadId": self.debug_thread_id,
             "index": 0, "count": 100})
-

@@ -26,6 +26,7 @@ if sys.version_info > (3, 0):
 else:
     from Queue import Queue
 
+
 class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     """An ENSIME client for a project configuration path (``.ensime``).
 
@@ -58,7 +59,8 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
             self.vim_command("highlight_enerror")
             self.vim_command("set_updatetime")
             self.vim_command("set_ensime_completion")
-            self.vim.command("autocmd FileType package_info nnoremap <buffer> <Space> :call EnPackageDecl()<CR>")
+            self.vim.command(
+                "autocmd FileType package_info nnoremap <buffer> <Space> :call EnPackageDecl()<CR>")
             self.vim.command("autocmd FileType package_info setlocal splitright")
             super(EnsimeClient, self).__init__()
 
@@ -378,7 +380,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.log(m)
         cmd = commands["display_message"]
         escaped = m.replace('"', '\\"')
-        c = "silent "+cmd if silent else cmd
+        c = "silent " + cmd if silent else cmd
         self.vim.command(c.format(escaped))
 
     def message(self, key):
@@ -390,21 +392,21 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.log("open_decl_for_inspector_symbol: in")
 
         def indent(ln):
-           n = 0
-           for c in ln:
-               if c == ' ':
-                   n += 1
-               else:
-                   break
-           return n/2
+            n = 0
+            for c in ln:
+                if c == ' ':
+                    n += 1
+                else:
+                    break
+            return n / 2
 
-        row,col = self.cursor()
+        row, col = self.cursor()
         lines = self.vim.current.buffer[:row]
         i = indent(lines[-1])
         fqn = [lines[-1].split()[-1]]
 
         for ln in reversed(lines):
-            if indent(ln) == i -1:
+            if indent(ln) == i - 1:
                 i -= 1
                 fqn.insert(0, ln.split()[-1])
 
@@ -413,10 +415,10 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.unqueue(should_wait=True)
 
     def to_quickfix_item(self, file_name, line_number, message, tpe):
-        return { "filename" : file_name,
-         "lnum"     : line_number,
-         "text"     : message,
-         "type"     : tpe }
+        return {"filename": file_name,
+                "lnum": line_number,
+                "text": message,
+                "type": tpe}
 
     def symbol_by_name(self, args, range=None):
         self.log("symbol_by_name: in")
@@ -425,8 +427,8 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
             return
 
         self.call_options[self.call_id] = {"split": True,
-                                           "vert": True ,
-                                           "open_definition": True }
+                                           "vert": True,
+                                           "open_definition": True}
         fqn = args[0]
         req = {
             "typehint": "SymbolByNameReq",
@@ -537,7 +539,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         if "v" in args:
             self.call_options[self.call_id] = {"split": True, "vert": True}
         else:
-            self.call_options[self.call_id] = {"split": True }
+            self.call_options[self.call_id] = {"split": True}
 
         self.symbol_at_point_req(True)
 
@@ -612,7 +614,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
                 "end": self.get_position(e[0], e[1]) + 1,
                 "file": current_file,
             },
-            { "interactive": False }
+            {"interactive": False}
         )
 
     def organize_imports(self, args, range=None):
@@ -674,7 +676,9 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
 
     def apply_refactor(self, call_id, payload):
         """Apply a refactor depending on its type."""
-        if payload["refactorType"]["typehint"] in ["Rename", "InlineLocal", "AddImport", "OrganizeImports"]:
+        supported_refactorings = ["Rename", "InlineLocal", "AddImport", "OrganizeImports"]
+
+        if payload["refactorType"]["typehint"] in supported_refactorings:
             diff_filepath = payload["diff"]
             path = self.path()
             bname = os.path.basename(path)
@@ -872,7 +876,7 @@ class Ensime(object):
 
     def init_settings(self):
         """Loads all the settings from the ``g:ensime_*`` namespace.
-        
+
         Invoked on client creation to avoid ``autocmd`` deadlocks.
         """
         self.server_v2 = bool(self.get_setting('server_v2', 0))
@@ -887,9 +891,9 @@ class Ensime(object):
     def init_integrations(self):
         syntastic_runtime = os.path.abspath(
             os.path.join(os.path.dirname(__file__),
-                os.path.pardir,
-                'plugin_integrations',
-                'syntastic'))
+                         os.path.pardir,
+                         'plugin_integrations',
+                         'syntastic'))
         self.vim.command(commands['syntastic_enable'].format(syntastic_runtime))
 
     def client_keys(self):
@@ -1120,5 +1124,3 @@ class Ensime(object):
     @execute_with_client()
     def send_request(self, client, request):
         client.send_request(request)
-
-

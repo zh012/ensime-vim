@@ -16,8 +16,9 @@ def completion_to_suggest(completion):
         "menu": formatted_completion_type(completion),
         # We allow duplicates, needed to show overloaded methods
         "dup": 1
-        }
+    }
     return res
+
 
 def formatted_completion_sig(completion):
     """Regenerate signature for methods. Return just the name otherwise"""
@@ -33,10 +34,12 @@ def formatted_completion_sig(completion):
     f_sections = [formatted_param_section(ps) for ps in sections]
     return u"{}{}".format(f_result, "".join(f_sections))
 
+
 def formatted_completion_type(completion):
     """Use result type for methods. Return just the member type otherwise"""
     t_info = completion["typeInfo"]
     return t_info["name"] if not completion["isCallable"] else t_info["resultType"]["name"]
+
 
 def formatted_param_section(section):
     """Format a parameters list. Supports the implicit list"""
@@ -44,10 +47,12 @@ def formatted_param_section(section):
     s_params = [(p[0], formatted_param_type(p[1])) for p in section["params"]]
     return "({}{})".format(implicit, concat_params(s_params))
 
+
 def concat_params(params):
     """Return list of params from list of (pname, ptype)."""
     name_and_types = [": ".join(p) for p in params]
     return ", ".join(name_and_types)
+
 
 def formatted_param_type(ptype):
     """Return the short name for a type. Special treatment for by-name and var args"""
@@ -57,4 +62,3 @@ def formatted_param_type(ptype):
     elif pt_name.startswith("<repeated>"):
         pt_name = pt_name.replace("<repeated>[", "")[:-1] + "*"
     return pt_name
-

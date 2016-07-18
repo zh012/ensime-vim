@@ -40,6 +40,7 @@ class Util:
                 break
         return package
 
+
 @contextmanager
 def catch(exception, handler=lambda e: None):
     """If exception runs handler."""
@@ -55,4 +56,3 @@ def module_exists(module_name):
         __import__(module_name)
         res = True
     return res
-

@@ -7,6 +7,7 @@ from ensime_shared.config import gconfig, feedback, commands
 from ensime_shared.util import catch
 from ensime_shared.symbol_format import completion_to_suggest
 
+
 class ProtocolHandler(object):
     """Mixin for common behavior of handling ENSIME protocol responses.
 
@@ -47,6 +48,7 @@ class ProtocolHandler(object):
         self.log("handle_incoming_response: in {}".format(payload))
         typehint = payload["typehint"]
         handler = self.handlers.get(typehint)
+
         def feature_not_supported(m):
             msg = feedback["handler_not_implemented"]
             self.raw_message(msg.format(typehint, self.launcher.ensime_version))
@@ -103,23 +105,32 @@ class ProtocolHandlerV1(ProtocolHandler):
         self.message("analyzer_ready")
 
     def handle_debug_vm_error(self, call_id, payload):
-        self.vim.command(commands['display_message'].format("Error. Check ensime-vim log for details."))
+        msg = "Error. Check ensime-vim log for details."
+        self.vim.command(commands['display_message'].format(msg))
 
     def handle_import_suggestions(self, call_id, payload):
-        imports = list(sorted(set(suggestion['name'].replace('$', '.') for suggestions in payload['symLists'] for suggestion in suggestions)))
-        if imports:
-            chosen_import = int(self.vim.eval(commands['select_item_list'].format(json.dumps(
-                ["Select class to import:"] + ["{}. {}".format(num + 1, imp) for (num, imp) in enumerate(imports)]))))
+        imports = list()
+        for suggestions in payload['symLists']:
+            for suggestion in suggestions:
+                imports.append(suggestion['name'].replace('$', '.'))
+        imports = list(sorted(set(imports)))
 
-            if chosen_import > 0:
-                self.add_import(imports[chosen_import - 1])
+        if not imports:
+            msg = "No import suggestions found."
+            self.vim.command(commands['display_message'].format(msg))
+            return
 
-        else:
-            self.vim.command(commands['display_message'].format("No import suggestions found"))
+        choices = ["{0}. {1}".format(*choice) for choice in enumerate(imports, start=1)]
+        menu = json.dumps(['Select class to import:'] + choices)
+        command = commands['select_item_list'].format(menu)
+        chosen_import = int(self.vim.eval(command))
+
+        if chosen_import > 0:
+            self.add_import(imports[chosen_import - 1])
 
     def handle_package_info(self, call_id, payload):
         package = payload["fullName"]
-        # Create a new buffer 45 columns wide
+
         def add(member, indentLevel):
             indent = "  " * indentLevel
             t = member["declAs"]["typehint"] if member["typehint"] == "BasicTypeInfo" else ""
@@ -129,7 +140,8 @@ class ProtocolHandlerV1(ProtocolHandler):
                 for m in member["members"]:
                     add(m, indentLevel + 1)
 
-        cmd = commands["new_vertical_scratch"].format(str(45),"package_info")
+        # Create a new buffer 45 columns wide
+        cmd = commands["new_vertical_scratch"].format(str(45), "package_info")
         self.vim.command(cmd)
         self.vim.command(commands["set_filetype"].format("package_info"))
         self.vim.command(commands["append_line"].format("\'$\'", str(package)))
@@ -145,9 +157,9 @@ class ProtocolHandlerV1(ProtocolHandler):
             p = sym.get("pos")
             if p:
                 item = self.to_quickfix_item(str(p["file"]),
-                                            p["line"],
-                                            str(sym["name"]),
-                                            "info")
+                                             p["line"],
+                                             str(sym["name"]),
+                                             "info")
                 qfList.append(item)
         self.write_quickfix_list(qfList)
 
