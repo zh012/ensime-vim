@@ -1,13 +1,13 @@
 # coding: utf-8
 
-import os
 import errno
+import fnmatch
+import os
+import shutil
 import signal
 import socket
 import subprocess
 import time
-import shutil
-import fnmatch
 
 from string import Template
 
@@ -15,7 +15,7 @@ import sexpdata
 
 from ensime_shared.config import BOOTSTRAPS_ROOT
 from ensime_shared.errors import InvalidJavaPathError
-from ensime_shared.util import Util, catch
+from ensime_shared.util import catch, Util
 
 
 class EnsimeProcess(object):

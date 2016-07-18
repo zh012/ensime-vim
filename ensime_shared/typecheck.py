@@ -1,9 +1,10 @@
 # coding: utf-8
 
-import os
 import json
-from ensime_shared.errors import Error
+import os
+
 from ensime_shared.config import commands
+from ensime_shared.errors import Error
 
 
 class TypecheckHandler(object):

@@ -1,8 +1,10 @@
 # coding: utf-8
 
-import sys
-import os
 import inspect
+import os
+import sys
+
+import neovim
 
 
 def ensime_init_path():
@@ -16,8 +18,7 @@ def ensime_init_path():
 
 ensime_init_path()
 
-from ensime_shared.ensime import Ensime
-import neovim
+from ensime_shared.ensime import Ensime  # noqa: E402
 
 # Params for autocmd by default
 autocmd_params = {

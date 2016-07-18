@@ -1,24 +1,21 @@
 # coding: utf-8
 
-import sys
-import os
+import datetime
 import inspect
+import json
+import os
+import sys
+import time
+from subprocess import PIPE, Popen
+from threading import Thread
 
-# Ensime shared imports
-from ensime_shared.errors import InvalidJavaPathError
-from ensime_shared.util import catch, module_exists, Util
-from ensime_shared.launcher import EnsimeLauncher
+from ensime_shared.config import commands, feedback, gconfig
 from ensime_shared.debugger import DebuggerClient
+from ensime_shared.errors import InvalidJavaPathError
+from ensime_shared.launcher import EnsimeLauncher
 from ensime_shared.protocol import ProtocolHandler, ProtocolHandlerV1, ProtocolHandlerV2
 from ensime_shared.typecheck import TypecheckHandler
-from ensime_shared.config import gconfig, feedback, commands
-
-from threading import Thread
-from subprocess import Popen, PIPE
-
-import json
-import time
-import datetime
+from ensime_shared.util import catch, module_exists, Util
 
 # Queue depends on python version
 if sys.version_info > (3, 0):
@@ -50,7 +47,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     which stores the a handler per response type.
     """
 
-    def __init__(self, vim, launcher, config_path):
+    def __init__(self, vim, launcher, config_path):  # noqa: C901 FIXME
         def setup_vim():
             """Set up vim and execute global commands."""
             self.vim = vim
@@ -158,14 +155,15 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         Value of sleep is low to improve responsiveness.
         """
         connection_alive = True
+
         while self.running:
             if self.ws:
-                def logger_and_close(m):
-                    self.log("Websocket exception: {}".format(m))
+                def logger_and_close(msg):
+                    self.log("Websocket exception: {}".format(msg))
                     if not self.running:
                         # Tear down has been invoked
                         # Prepare to exit the program
-                        connection_alive = False
+                        connection_alive = False  # noqa: F841
                     else:
                         if not self.number_try_connection:
                             # Stop everything and disable plugin
@@ -173,6 +171,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
                             self.disable_plugin()
 
                 # WebSocket exception may happen
+                # FIXME: What Exception class? Don't catch Exception
                 with catch(Exception, logger_and_close):
                     result = self.ws.recv()
                     self.queue.put(result)
@@ -423,7 +422,8 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     def symbol_by_name(self, args, range=None):
         self.log("symbol_by_name: in")
         if not args:
-            msg = commands["display_message"].format("Must provide a fully qualifed symbol name")
+            msg = "Must provide a fully-qualifed symbol name"
+            commands["display_message"].format(msg)
             return
 
         self.call_options[self.call_id] = {"split": True,

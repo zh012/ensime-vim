@@ -1,11 +1,11 @@
 # coding: utf-8
 
-import webbrowser
 import json
+import webbrowser
 
-from ensime_shared.config import gconfig, feedback, commands
-from ensime_shared.util import catch
+from ensime_shared.config import commands, feedback, gconfig
 from ensime_shared.symbol_format import completion_to_suggest
+from ensime_shared.util import catch
 
 
 class ProtocolHandler(object):
@@ -165,8 +165,7 @@ class ProtocolHandlerV1(ProtocolHandler):
 
     def handle_symbol_info(self, call_id, payload):
         """Handler for response `SymbolInfo`."""
-        warn = lambda e: self.message("unknown_symbol")
-        with catch(KeyError, warn):
+        with catch(KeyError, lambda e: self.message("unknown_symbol")):
             decl_pos = payload["declPos"]
             f = decl_pos.get("file")
             self.log(str(self.call_options[call_id]))
