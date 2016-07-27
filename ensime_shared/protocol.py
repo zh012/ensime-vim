@@ -45,18 +45,20 @@ class ProtocolHandler(object):
 
     def handle_incoming_response(self, call_id, payload):
         """Get a registered handler for a given response and execute it."""
-        self.log("handle_incoming_response: in {}".format(payload))
+        self.log.debug('handle_incoming_response: in %s', payload)
+
         typehint = payload["typehint"]
         handler = self.handlers.get(typehint)
 
         def feature_not_supported(m):
             msg = feedback["handler_not_implemented"]
             self.raw_message(msg.format(typehint, self.launcher.ensime_version))
+
         if handler:
             with catch(NotImplementedError, feature_not_supported):
                 handler(call_id, payload)
         else:
-            self.log(feedback["unhandled_response"].format(payload))
+            self.log.warning(feedback['unhandled_response'], payload)
 
     def handle_indexer_ready(self, call_id, payload):
         raise NotImplementedError()
@@ -150,7 +152,8 @@ class ProtocolHandlerV1(ProtocolHandler):
 
     def handle_symbol_search(self, call_id, payload):
         """Handler for symbol search results"""
-        self.log(payload)
+        self.log.debug('handle_symbol_search: in %s', payload)
+
         syms = payload["syms"]
         qfList = []
         for sym in syms:
@@ -168,17 +171,18 @@ class ProtocolHandlerV1(ProtocolHandler):
         with catch(KeyError, lambda e: self.message("unknown_symbol")):
             decl_pos = payload["declPos"]
             f = decl_pos.get("file")
-            self.log(str(self.call_options[call_id]))
-            display = self.call_options[call_id].get("display")
+            call_options = self.call_options[call_id]
+            self.log.debug('handle_symbol_info: call_options %s', call_options)
+            display = call_options.get("display")
             if display and f:
                 self.vim.command(commands["display_message"].format(f))
 
-            open_definition = self.call_options[call_id].get("open_definition")
+            open_definition = call_options.get("open_definition")
             if open_definition and f:
                 self.clean_errors()
                 self.vim_command("doautocmd_bufleave")
-                split = self.call_options[call_id].get("split")
-                vert = self.call_options[call_id].get("vert")
+                split = call_options.get("split")
+                vert = call_options.get("vert")
                 key = ""
                 if split:
                     key = "vert_split_window" if vert else "split_window"
@@ -197,13 +201,13 @@ class ProtocolHandlerV1(ProtocolHandler):
           2. `DebugToStringReq`
           3. `FormatOneSourceReq`
         """
-        self.log(str(payload))
+        self.log.debug('handle_string_response: in %s', payload)
         self.handle_doc_uri(call_id, payload)
 
     def handle_doc_uri(self, call_id, payload):
         """Handler for responses of Doc URIs."""
         if not self.en_format_source_id:
-            self.log("handle_string_response: received doc path")
+            self.log.debug('handle_doc_uri: received doc path')
             port = self.ensime.http_port()
 
             url = payload["text"]
@@ -211,17 +215,13 @@ class ProtocolHandlerV1(ProtocolHandler):
             if not url.startswith("http"):
                 url = gconfig["localhost"].format(port, payload["text"])
 
-            browse_enabled = self.call_options[call_id].get("browse")
-
-            if browse_enabled:
-                log_msg = "handle_string_response: browsing doc path {}"
-                self.log(log_msg.format(url))
+            if self.call_options[call_id].get('browse'):
+                self.log.debug('handle_doc_uri: browsing doc path %s', url)
                 try:
                     if webbrowser.open(url):
-                        self.log("opened {}".format(url))
-                except webbrowser.Error as e:
-                    log_msg = "handle_string_response: webbrowser error: {}"
-                    self.log(log_msg.format(e))
+                        self.log.info('opened %s', url)
+                except webbrowser.Error:
+                    self.log.exception('handle_doc_uri: webbrowser error')
                     self.raw_message(feedback["manual_doc"].format(url))
 
             del self.call_options[call_id]
@@ -232,11 +232,11 @@ class ProtocolHandlerV1(ProtocolHandler):
 
     def handle_completion_info_list(self, call_id, payload):
         """Handler for a completion response."""
+        self.log.debug('handle_completion_info_list: in')
         # filter out completions without `typeInfo` field to avoid server bug. See #324
         completions = [c for c in payload["completions"] if "typeInfo" in c]
-        self.log("handle_completion_info_list: in")
         self.suggestions = [completion_to_suggest(c) for c in completions]
-        self.log("handle_completion_info_list: {}".format(self.suggestions))
+        self.log.debug('handle_completion_info_list: %s', self.suggestions)
 
     def handle_type_inspect(self, call_id, payload):
         """Handler for responses `TypeInspectInfo`."""
@@ -254,7 +254,7 @@ class ProtocolHandlerV1(ProtocolHandler):
         else:
             tpe = payload['name']
 
-        self.log(feedback["displayed_type"].format(tpe))
+        self.log.info(feedback['displayed_type'], tpe)
         self.raw_message(tpe)
 
 
