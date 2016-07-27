@@ -16,7 +16,8 @@ feedback = {
     "failed_refactoring": "The refactoring could not be applied (more info at logs)",
     "full_types_enabled_off": "Qualified type display disabled",
     "full_types_enabled_on": "Qualified type display enabled",
-    "handler_not_implemented": "The feature {} is not supported by the current Ensime server version {}",
+    "handler_not_implemented":
+        "The feature {} is not supported by the current Ensime server version {}",
     "indexer_ready": "Indexer is ready",
     "invalid_java": "Java not found or not executable, verify :java-home in your .ensime config",
     "manual_doc": "Go to {}",
@@ -43,7 +44,7 @@ commands = {
     "current_file": "expand('%:p')",
     "until_last_char_word": "normal e",
     "until_first_char_word": "normal b",
-    # Avoid to trigger requests to server when writing
+    # Avoid triggering requests to server when writing
     "write_file": "noautocmd w",
     "input_save": "call inputsave()",
     "input_restore": "call inputrestore()",
@@ -55,7 +56,8 @@ commands = {
     "split_window": "split {}",
     "vert_split_window": "vsplit {}",
     "new_vertical_window": "{}vnew {}",
-    "new_vertical_scratch": "{}vnew {} | setlocal nobuflisted buftype=nofile bufhidden=wipe noswapfile",
+    "new_vertical_scratch":
+        "{}vnew {} | setlocal nobuflisted buftype=nofile bufhidden=wipe noswapfile",
     "doautocmd_bufleave": "doautocmd BufLeave",
     "doautocmd_bufreadenter": "doautocmd BufReadPre,BufRead,BufEnter",
     "filetype": "&filetype",
@@ -68,7 +70,9 @@ commands = {
     "runtimepath": "&runtimepath",
     "syntastic_available": 'exists("g:SyntasticRegistry")',
     "syntastic_enable": "if exists('g:SyntasticRegistry') | let &runtimepath .= ',' . {!r} | endif",
-    "syntastic_append_notes": 'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif | let b:ensime_scala_notes += {}',
+    "syntastic_append_notes":
+        'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif |'
+        'let b:ensime_scala_notes += {}',
     "syntastic_reset_notes": 'let b:ensime_scala_notes = []',
     "syntastic_show_notes": "silent! SyntasticCheck ensime",
     "get_cursor_word": 'expand("<cword>")',

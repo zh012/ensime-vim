@@ -1,12 +1,14 @@
 # coding: utf-8
 
-import os
 import json
-from ensime_shared.errors import Error
+import os
+
 from ensime_shared.config import commands
+from ensime_shared.errors import Error
 
 
 class TypecheckHandler(object):
+
     def __init__(self):
         self.currently_buffering_typechecks = False
         self.buffered_notes = {}
@@ -46,16 +48,16 @@ class TypecheckHandler(object):
 
         current_file = os.path.abspath(self.path())
         loclist = list({
-                'bufnr': self.vim.current.buffer.number,
-                'lnum': note['line'],
-                'col': note['col'],
-                'text': note['msg'],
-                'len': note['end'] - note['beg'] + 1,
-                'type': note['severity']['typehint'][4:5],
-                'valid': 1
-            } for note in payload["notes"]
-                    if current_file == os.path.abspath(note['file']) and
-                    is_note_correct(note)
+            'bufnr': self.vim.current.buffer.number,
+            'lnum': note['line'],
+            'col': note['col'],
+            'text': note['msg'],
+            'len': note['end'] - note['beg'] + 1,
+            'type': note['severity']['typehint'][4:5],
+            'valid': 1
+        } for note in payload["notes"]
+            if current_file == os.path.abspath(note['file']) and
+            is_note_correct(note)
         )
 
         json_list = json.dumps(loclist)

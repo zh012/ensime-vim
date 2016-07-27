@@ -1,22 +1,24 @@
 # coding: utf-8
 
-import sys
-import os
 import inspect
+import os
+import sys
+
+import neovim
+
 
 def ensime_init_path():
     path = os.path.abspath(inspect.getfile(inspect.currentframe()))
-    if path.endswith('/rplugin/python/ensime.py'): # nvim rplugin
+    if path.endswith('/rplugin/python/ensime.py'):  # nvim rplugin
         sys.path.append(os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(path)))))
-    elif path.endswith('/autoload/ensime.vim.py'): # vim plugin
+    elif path.endswith('/autoload/ensime.vim.py'):  # vim plugin
         sys.path.append(os.path.join(
             os.path.dirname(os.path.dirname(path))))
 
 ensime_init_path()
 
-from ensime_shared.ensime import Ensime
-import neovim
+from ensime_shared.ensime import Ensime  # noqa: E402
 
 # Params for autocmd by default
 autocmd_params = {
@@ -32,9 +34,11 @@ command_params = {
     "sync": True
 }
 
+
 @neovim.plugin
 class NeovimEnsime(Ensime):
     """Decorate as a Neovim plugin with the Ensime functionality."""
+
     def __init__(self, vim):
         super(NeovimEnsime, self).__init__(vim)
 

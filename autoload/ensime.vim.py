@@ -1,8 +1,10 @@
 # coding: utf-8
 
-import sys
-import os
 import inspect
+import os
+import sys
+
+import vim
 
 
 def ensime_init_path():
@@ -16,7 +18,5 @@ def ensime_init_path():
 
 ensime_init_path()
 
-import vim
-
-from ensime_shared.ensime import Ensime
+from ensime_shared.ensime import Ensime  # noqa: E402
 ensime_plugin = Ensime(vim)
