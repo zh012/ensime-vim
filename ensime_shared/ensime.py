@@ -11,8 +11,9 @@ import time
 from subprocess import PIPE, Popen
 from threading import Thread
 
-from .config import commands, feedback, gconfig, LOG_FORMAT
+from .config import feedback, gconfig, LOG_FORMAT
 from .debugger import DebuggerClient
+from .editor import Editor
 from .errors import InvalidJavaPathError
 from .launcher import EnsimeLauncher
 from .protocol import ProtocolHandler, ProtocolHandlerV1, ProtocolHandlerV2
@@ -49,18 +50,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     which stores the a handler per response type.
     """
 
-    def __init__(self, vim, launcher):  # noqa: C901 FIXME
-        def setup_vim():
-            """Set up vim and execute global commands."""
-            if not int(self.vim_eval("exists_enerrorstyle")):
-                self.vim_command("set_enerrorstyle")
-            self.vim_command("highlight_enerror")
-            self.vim_command("set_updatetime")
-            self.vim_command("set_ensime_completion")
-            self.vim.command(
-                "autocmd FileType package_info nnoremap <buffer> <Space> :call EnPackageDecl()<CR>")
-            self.vim.command("autocmd FileType package_info setlocal splitright")
-
+    def __init__(self, editor, vim, launcher):  # noqa: C901 FIXME
         # Our use case of a logger per class instance with independent log files
         # requires a bunch of manual programmatic config :-/
         def setup_logger():
@@ -94,8 +84,12 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
             return logger
 
         def fetch_runtime_paths():
-            """Fetch all the runtime paths of ensime-vim plugin."""
-            runtimepath = self.vim_eval("runtimepath")
+            """Fetch all the runtime paths of ensime-vim plugin.
+
+            disable_plugin needs this to run on the main thread, hence the
+            eager execution from constructor.
+            """
+            runtimepath = self.vim.eval('&runtimepath')
             plugin = "ensime-vim"
             paths = []
 
@@ -107,11 +101,12 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
 
         super(EnsimeClient, self).__init__()
         self.vim = vim
+        self.editor = editor
         self.launcher = launcher
 
         self.log = setup_logger()
         self.log.debug('__init__: in')
-        setup_vim()
+        self.editor.initialize()
 
         self.ws = None
         self.ensime = None
@@ -123,8 +118,6 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.refactorings = {}
         self.receive_callbacks = {}
 
-        self.matches = []
-        self.errors = []
         # Queue for messages received from the ensime server.
         self.queue = Queue()
         self.suggestions = None
@@ -195,16 +188,6 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.log.debug('on_receive: %s', callback)
         self.receive_callbacks[name] = callback
 
-    def vim_command(self, key):
-        """Execute a vim cached command from the commands dictionary."""
-        vim_cmd = commands[key]
-        self.vim.command(vim_cmd)
-
-    def vim_eval(self, key):
-        """Eval a vim cached expression from the commands dictionary."""
-        vim_cmd = commands[key]
-        return self.vim.eval(vim_cmd)
-
     def setup(self, quiet=False, bootstrap_server=False):
         """Check the classpath and connect to the server if necessary."""
         def lazy_initialize_ensime():
@@ -218,13 +201,13 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
                     if not quiet:
                         scala = self.launcher.config.get('scala-version')
                         msg = feedback["prompt_server_install"].format(scala_version=scala)
-                        self.raw_message(msg)
+                        self.editor.raw_message(msg)
                     return False
 
                 try:
                     self.ensime = self.launcher.launch()
                 except InvalidJavaPathError:
-                    self.message('invalid_java')  # TODO: also disable plugin
+                    self.editor.message('invalid_java')  # TODO: also disable plugin
 
             return bool(self.ensime)
 
@@ -241,28 +224,28 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     def tell_module_missing(self, name):
         """Warn users that a module is not available in their machines."""
         msg = feedback["module_missing"]
-        self.raw_message(msg.format(name, name))
+        self.editor.raw_message(msg.format(name, name))
 
-    def threadsafe_vim(self, command):
-        """Threadsafe call if neovim, normal if vim."""
-        def normal_vim(e):
-            self.vim.command(command)
-        with catch(Exception, normal_vim):
-            self.vim.session.threadsafe_call(command)
-
+    # TODO: this should be the Ensime class's responsibility, not EnsimeClient;
+    #       move (and eliminate self.vim) after fixing, see #294
     def disable_plugin(self):
         """Disable plugin temporarily, including also related plugins."""
         self.log.debug('disable_plugin: in')
 
+        def threadsafe_vim(command):
+            """Threadsafe call if neovim, normal if vim."""
+            def normal_vim(e):
+                self.vim.command(command)
+            with catch(Exception, normal_vim):
+                self.vim.session.threadsafe_call(command)
+
         for path in self.runtime_paths:
             self.log.debug(path)
-            disable = commands["disable_plugin"].format(path)
-            self.threadsafe_vim(disable)
+            threadsafe_vim('set runtimepath-={}'.format(path))
 
         warning = "A WS exception happened, 'ensime-vim' has been disabled. " +\
             "For more information, have a look at the logs in `.ensime_cache`"
-        display_msg = commands["display_message"].format(warning)
-        self.threadsafe_vim(display_msg)
+        threadsafe_vim('echo "{}"'.format(warning))
 
     def send(self, msg):
         """Send something to the ensime server."""
@@ -316,126 +299,44 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.shutdown_server()
         shutil.rmtree(self.tmp_diff_folder, ignore_errors=True)
 
-    def cursor(self):
-        """Return the row and col of the current buffer."""
-        return self.vim.current.window.cursor
-
-    def set_cursor(self, row, col):
-        """Set cursor at a given row and col in a buffer."""
-        self.log.debug('set_cursor: %s', (row, col))
-        self.vim.current.window.cursor = (row, col)
-
-    def width(self):
-        """Return the width of the window."""
-        return self.vim.current.window.width
-
-    def path(self):
-        """Return the current path."""
-        self.log.debug('path: in')
-        return self.vim.current.buffer.name
-
-    def start_end_pos(self):
-        """Return start and end positions of the cursor respectively."""
-        self.vim_command("until_last_char_word")
-        e = self.cursor()
-        self.vim_command("until_first_char_word")
-        b = self.cursor()
-        return b, e
-
     def send_at_position(self, what, where="range"):
         self.log.debug('send_at_position: in')
-        b, e = self.start_end_pos()
+        b, e = self.editor.start_end_pos()
         bcol, ecol = b[1], e[1]
         s, line = ecol - bcol, b[0]
-        self.send_at_point_req(what, self.path(), line, bcol + 1, s, where)
+        self.send_at_point_req(what, self.editor.path(), line, bcol + 1, s, where)
+
+    # TODO: Should these be in Editor? They're translating to/from ENSIME's
+    # coordinate scheme so it's debatable.
 
     def set_position(self, decl_pos):
-        """Set position from declPos data."""
+        """Set editor position from ENSIME declPos data."""
         if decl_pos["typehint"] == "LineSourcePosition":
-            self.set_cursor(decl_pos['line'], 0)
+            self.editor.set_cursor(decl_pos['line'], 0)
         else:  # OffsetSourcePosition
             point = decl_pos["offset"]
-            cmd = commands["go_to_char"].format(str(point + 1))
-            self.vim.command(cmd)
+            self.editor.goto(point + 1)
 
     def get_position(self, row, col):
         """Get char position in all the text from row and column."""
         result = col
         self.log.debug('%s %s', row, col)
-        lines = self.vim.current.buffer[:row - 1]
+        lines = self.editor.getlines()[:row - 1]
         result += sum([len(l) + 1 for l in lines])
         self.log.debug(result)
         return result
 
-    def get_file_content(self):
-        """Get content of file."""
-        return "\n".join(self.vim.current.buffer)
-
-    def get_file_info(self):
-        """Returns filename and content of a file."""
-        return {"file": self.path(),
-                "contents": self.get_file_content()}
-
-    def ask_input(self, message='input: '):
-        """Ask input to vim and display info string."""
-        self.vim_command("input_save")
-        # Format to display message with input()
-        cmd = commands["set_input"]
-        self.vim.command(cmd.format(message))
-        self.vim_command("input_restore")
-        return self.vim_eval("get_input")
-
-    def raw_message(self, m, silent=False):
-        """Display a message in the vim status line."""
-        self.log.debug('message: in')
-        self.log.debug(m)
-        cmd = commands["display_message"]
-        escaped = m.replace('"', '\\"')
-        c = "silent " + cmd if silent else cmd
-        self.vim.command(c.format(escaped))
-
-    def message(self, key):
-        """Display a message already defined in `feedback`."""
-        msg = '[ensime] ' + feedback[key]
-        self.raw_message(msg)
-
     def open_decl_for_inspector_symbol(self):
         self.log.debug('open_decl_for_inspector_symbol: in')
-
-        def indent(ln):
-            n = 0
-            for c in ln:
-                if c == ' ':
-                    n += 1
-                else:
-                    break
-            return n / 2
-
-        row, col = self.cursor()
-        lines = self.vim.current.buffer[:row]
-        i = indent(lines[-1])
-        fqn = [lines[-1].split()[-1]]
-
-        for ln in reversed(lines):
-            if indent(ln) == i - 1:
-                i -= 1
-                fqn.insert(0, ln.split()[-1])
-
-        symbolName = ".".join(fqn)
-        self.symbol_by_name([symbolName])
+        lineno = self.editor.cursor()[0]
+        symbol = self.editor.symbol_for_inspector_line(lineno)
+        self.symbol_by_name([symbol])
         self.unqueue(should_wait=True)
-
-    def to_quickfix_item(self, file_name, line_number, message, tpe):
-        return {"filename": file_name,
-                "lnum": line_number,
-                "text": message,
-                "type": tpe}
 
     def symbol_by_name(self, args, range=None):
         self.log.debug('symbol_by_name: in')
         if not args:
-            msg = "Must provide a fully-qualifed symbol name"
-            commands["display_message"].format(msg)
+            self.editor.raw_message('Must provide a fully-qualifed symbol name')
             return
 
         self.call_options[self.call_id] = {"split": True,
@@ -450,18 +351,13 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
             req["memberName"] = args[1]
         self.send_request(req)
 
-    def write_quickfix_list(self, qf_list):
-        cmd = commands["set_quickfix_list"].format(str(qf_list))
-        self.vim.command(cmd)
-        self.vim_command("open_quickfix")
-
     def complete(self, row, col):
         self.log.debug('complete: in')
         pos = self.get_position(row, col)
         self.send_request({"point": pos, "maxResults": 100,
                            "typehint": "CompletionsReq",
                            "caseSens": True,
-                           "fileInfo": self.get_file_info(),
+                           "fileInfo": self._file_info(),
                            "reload": False})
 
     def send_at_point_req(self, what, path, row, col, size, where="range"):
@@ -482,7 +378,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.log.debug('type_check_cmd: in')
         self.start_typechecking()
         self.type_check("")
-        self.message('typechecking')
+        self.editor.message('typechecking')
 
     def en_install(self, args, range=None):
         """Bootstrap ENSIME server installation.
@@ -497,7 +393,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     def format_source(self, args, range=None):
         self.log.debug('type_check_cmd: in')
         req = {"typehint": "FormatOneSourceReq",
-               "file": self.get_file_info()}
+               "file": self._file_info()}
         self.en_format_source_id = self.send_request(req)
 
     def type(self, args, range=None):
@@ -509,9 +405,9 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.full_types_enabled = not self.full_types_enabled
 
         if self.full_types_enabled:
-            self.message("full_types_enabled_on")
+            self.editor.message("full_types_enabled_on")
         else:
-            self.message("full_types_enabled_off")
+            self.editor.message("full_types_enabled_off")
 
     def symbol_at_point_req(self, open_definition, display=False):
         opts = self.call_options.get(self.call_id)
@@ -523,18 +419,17 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
                 "open_definition": open_definition,
                 "display": display
             }
-        pos = self.get_position(self.cursor()[0], self.cursor()[1])
+        pos = self.get_position(*self.editor.cursor())
         self.send_request({
             "point": pos + 1,
             "typehint": "SymbolAtPointReq",
-            "file": self.path()})
+            "file": self.editor.path()})
 
     def inspect_package(self, args):
         pkg = None
         if not args:
-            pkg = Util.extract_package_name(self.vim.current.buffer)
-            msg = commands["display_message"].format("Using Currently Focused Package")
-            self.vim.command(msg)
+            pkg = Util.extract_package_name(self.editor.getlines())
+            self.editor.message('package_inspect_current')
         else:
             pkg = args[0]
         self.send_request({
@@ -561,22 +456,22 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
 
     def suggest_import(self, args, range=None):
         self.log.debug('suggest_import: in')
-        pos = self.get_position(self.cursor()[0], self.cursor()[1])
-        word = self.vim_eval('get_cursor_word')
+        pos = self.get_position(*self.editor.cursor())
+        word = self.editor.current_word()
         req = {"point": pos,
                "maxResults": 10,
                "names": [word],
                "typehint": "ImportSuggestionsReq",
-               "file": self.path()}
+               "file": self.editor.path()}
         self.send_request(req)
 
     def inspect_type(self, args, range=None):
         self.log.debug('inspect_type: in')
-        pos = self.get_position(self.cursor()[0], self.cursor()[1])
+        pos = self.get_position(*self.editor.cursor())
         self.send_request({
             "point": pos,
             "typehint": "InspectTypeAtPointReq",
-            "file": self.path(),
+            "file": self.editor.path(),
             "range": {"from": pos, "to": pos}})
 
     def doc_uri(self, args, range=None):
@@ -594,11 +489,11 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         """Request a rename to the server."""
         self.log.debug('rename: in')
         if not new_name:
-            new_name = self.ask_input("Rename to: ")
-        self.vim_command("write_file")
-        b, e = self.start_end_pos()
-        current_file = self.path()
-        self.raw_message(current_file)
+            new_name = self.editor.ask_input("Rename to:")
+        self.editor.write(noautocmd=True)
+        b, e = self.editor.start_end_pos()
+        current_file = self.editor.path()
+        self.editor.raw_message(current_file)
         self.send_refactor_request(
             "RefactorReq",
             {
@@ -614,10 +509,10 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     def inlineLocal(self, range=None):
         """Perform a local inline"""
         self.log.debug('inline: in')
-        self.vim_command("write_file")
-        b, e = self.start_end_pos()
-        current_file = self.path()
-        self.raw_message(current_file)
+        self.editor.write(noautocmd=True)
+        b, e = self.editor.start_end_pos()
+        current_file = self.editor.path()
+        self.editor.raw_message(current_file)
         self.send_refactor_request(
             "RefactorReq",
             {
@@ -630,8 +525,8 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         )
 
     def organize_imports(self, args, range=None):
-        self.vim_command("write_file")
-        current_file = self.path()
+        self.editor.write(noautocmd=True)
+        current_file = self.editor.path()
         self.send_refactor_request(
             "RefactorReq",
             {
@@ -643,14 +538,13 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
 
     def add_import(self, name, range=None):
         if not name:
-            name = self.ask_input("Qualified name to import: ")
-        self.vim_command("write_file")
-        current_file = self.path()
+            name = self.editor.ask_input("Qualified name to import:")
+        self.editor.write(noautocmd=True)
         self.send_refactor_request(
             "RefactorReq",
             {
                 "typehint": "AddImportRefactorDesc",
-                "file": current_file,
+                "file": self.editor.path(),
                 "qualifiedName": name
             },
             {"interactive": False}
@@ -661,8 +555,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.log.debug('symbol_search: in')
 
         if not search_terms:
-            msg = commands["display_message"].format("Must provide symbols to search for")
-            self.vim.command(msg)
+            self.editor.message('symbol_search_symbol_required')
             return
         req = {
             "typehint": "PublicSymbolSearchReq",
@@ -687,13 +580,14 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         request.update(ref_options)
         self.send_request(request)
 
+    # TODO: preserve cursor position
     def apply_refactor(self, call_id, payload):
         """Apply a refactor depending on its type."""
         supported_refactorings = ["Rename", "InlineLocal", "AddImport", "OrganizeImports"]
 
         if payload["refactorType"]["typehint"] in supported_refactorings:
             diff_filepath = payload["diff"]
-            path = self.path()
+            path = self.editor.path()
             bname = os.path.basename(path)
             target = os.path.join(self.tmp_diff_folder, bname)
             reject_arg = "--reject-file={}.rej".format(target)
@@ -702,11 +596,10 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
             cmd = ["patch", reject_arg, backup_pref, path, diff_filepath]
             failed = Popen(cmd, stdout=PIPE, stderr=PIPE).wait()
             if failed:
-                self.message("failed_refactoring")
+                self.editor.message("failed_refactoring")
             # Update file and reload highlighting
-            cmd = commands["edit_file"].format(self.path())
-            self.vim.command(cmd)
-            self.vim_command("doautocmd_bufreadenter")
+            self.editor.edit(self.editor.path())
+            self.editor.doautocmd('BufReadPre', 'BufRead', 'BufEnter')
 
     def send_request(self, request):
         """Send a request to the server."""
@@ -720,25 +613,20 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.call_id += 1
         return call_id
 
-    def clean_errors(self):
-        """Clean errors and unhighlight them in vim."""
-        self.vim.eval("clearmatches()")
-        self.vim_command('syntastic_reset_notes')
-        self.matches = []
-        self.errors = []
-
     def buffer_leave(self, filename):
         """User is changing of buffer."""
         self.log.debug('buffer_leave: %s', filename)
-        self.clean_errors()
+        # TODO: This is questionable, and we should use location list for
+        # single-file errors.
+        self.editor.clean_errors()
 
     def type_check(self, filename):
         """Update type checking when user saves buffer."""
         self.log.debug('type_check: in')
+        self.editor.clean_errors()
         self.send_request(
             {"typehint": "TypecheckFilesReq",
-             "files": [self.path()]})
-        self.clean_errors()
+             "files": [self.editor.path()]})
 
     def unqueue(self, timeout=10, should_wait=False):
         """Unqueue all the received ensime responses for a given file."""
@@ -775,16 +663,8 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     def unqueue_and_display(self, filename):
         """Unqueue messages and give feedback to user (if necessary)."""
         if self.running and self.ws:
-            self.lazy_display_error(filename)
+            self.editor.lazy_display_error(filename)
             self.unqueue()
-
-    def lazy_display_error(self, filename):
-        """Display error when user is over it."""
-        error = self.get_error_at(self.cursor())
-        if error:
-            report = error.get_truncated_message(
-                self.cursor(), self.width() - 1)
-            self.raw_message(report)
 
     def on_cursor_hold(self, filename):
         """Handler for event CursorHold."""
@@ -795,10 +675,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
             self.setup(True, False)
             self.connection_attempts += 1
         self.unqueue_and_display(filename)
-        # Make sure any plugin overrides this
-        self.vim_command("set_updatetime")
-        # Keys with no effect, just retrigger CursorHold
-        self.vim.command('call feedkeys("f\e")')
+        self.editor.cursorhold()
 
     def on_cursor_move(self, filename):
         """Handler for event CursorMoved."""
@@ -811,23 +688,16 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         This is useful to start the EnsimeLauncher as soon as possible."""
         success = self.setup(True, False)
         if success:
-            self.message("start_message")
-
-    def get_error_at(self, cursor):
-        """Return error at position `cursor`."""
-        for error in self.errors:
-            if error.includes(self.vim.eval("expand('%:p')"), cursor):
-                return error
-        return None
+            self.editor.message("start_message")
 
     def complete_func(self, findstart, base):
         """Handle omni completion."""
         self.log.debug('complete_func: in %s %s', findstart, base)
 
         def detect_row_column_start():
-            row, col = self.cursor()
+            row, col = self.editor.cursor()
             start = col
-            line = self.vim.current.line
+            line = self.editor.getline()
             while start > 0 and line[start - 1] not in " .":
                 start -= 1
             # Start should be 1 when startcol is zero
@@ -855,6 +725,13 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
                 self.suggestions = None
                 self.completion_started = False
             return result
+
+    def _file_info(self):
+        """Message fragment for ENSIME ``fileInfo`` field, from current file."""
+        return {
+            'file': self.editor.path(),
+            'contents': self.editor.get_file_content(),
+        }
 
 
 class EnsimeClientV1(ProtocolHandlerV1, EnsimeClient):
@@ -935,9 +812,7 @@ class Ensime(object):
 
     def current_client(self, quiet, bootstrap_server, create_client):
         """Return the current client for a given project."""
-        # Use current_file command because we cannot access self.vim
-        current_file_cmd = commands["current_file"]
-        current_file = self.vim.eval(current_file_cmd)
+        current_file = self.vim.current.buffer.name
         config_path = self.find_config_path(current_file)
         if config_path:
             return self.client_for(
@@ -974,19 +849,18 @@ class Ensime(object):
         return client
 
     def do_create_client(self, config_path):
+        editor = Editor(self.vim)
         launcher = EnsimeLauncher(self.vim, config_path, self.server_v2)
         if self.server_v2:
-            return EnsimeClientV2(self.vim, launcher)
+            return EnsimeClientV2(editor, self.vim, launcher)
         else:
-            return EnsimeClientV1(self.vim, launcher)
+            return EnsimeClientV1(editor, self.vim, launcher)
 
     def is_scala_file(self):
-        cmd = commands["filetype"]
-        return self.vim.eval(cmd) == 'scala'
+        return self.vim.eval('&filetype') == 'scala'
 
     def is_java_file(self):
-        cmd = commands["filetype"]
-        return self.vim.eval(cmd) == 'java'
+        return self.vim.eval('&filetype') == 'java'
 
     @execute_with_client()
     def com_en_toggle_teardown(self, client, args, range=None):
@@ -1100,7 +974,7 @@ class Ensime(object):
     def com_en_clients(self, client, args, range=None):
         for path in self.client_keys():
             status = self.client_status(path)
-            client.raw_message("{}: {}".format(path, status))
+            client.editor.raw_message("{}: {}".format(path, status))
 
     @execute_with_client()
     def com_en_sym_search(self, client, args, range=None):

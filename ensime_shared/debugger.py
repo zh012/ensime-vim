@@ -13,11 +13,11 @@ class DebuggerClient(object):
 # Response Handlers
     def handle_debug_output(self, call_id, payload):
         """Handle responses `DebugOutputEvent`."""
-        self.raw_message(payload["body"].encode("ascii", "ignore"))
+        self.editor.raw_message(payload["body"].encode("ascii", "ignore"))
 
     def handle_debug_break(self, call_id, payload):
         """Handle responses `DebugBreakEvent`."""
-        self.raw_message(feedback["notify_break"])
+        self.editor.raw_message(feedback["notify_break"])
         self.debug_thread_id = payload["threadId"]
 
     def handle_debug_backtrace(self, call_id, payload):
@@ -30,10 +30,10 @@ class DebuggerClient(object):
 # API Call Build/Send
     def debug_set_break(self, args, range=None):
         self.log.debug('debug_set_break: in')
-        req = {"line": self.cursor()[0],
+        req = {"line": self.editor.cursor()[0],
                "maxResults": 10,
                "typehint": "DebugSetBreakReq",
-               "file": self.path()}
+               "file": self.editor.path()}
         self.send_request(req)
 
     def debug_clear_breaks(self, args, range=None):
