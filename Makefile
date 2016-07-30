@@ -8,6 +8,8 @@ activate := $(VENV)/bin/activate
 requirements := requirements.txt test-requirements.txt
 deps := $(VENV)/deps-updated
 
+features := ensime_shared/spec/features
+
 test: unit integration
 
 $(activate):
@@ -24,7 +26,17 @@ unit: $(deps)
 
 integration: $(deps)
 	@echo "Running ensime-vim lettuce tests"
-	. $(activate) && lettuce ensime_shared/spec/features
+	. $(activate) && lettuce $(features)
+
+coverage: $(deps)
+	. $(activate) && \
+		coverage erase && \
+		coverage run --module pytest && \
+		coverage run --append $$(which lettuce) $(features) && \
+		coverage html && \
+		coverage report
+	@echo
+	@echo "Open htmlcov/index.html for an HTML report."
 
 lint: $(deps)
 	. $(activate) && flake8 --statistics --count --show-source
@@ -33,9 +45,14 @@ format: $(deps)
 	. $(activate) && autopep8 -aaa --in-place -r $(REFORMAT)
 
 clean:
-	@echo Cleaning build artifacts, including the virtualenv...
-	-rm -rf $(VENV)
+	@echo Cleaning build artifacts...
 	-find . -type f -name '*.py[c|o]' -delete
 	-find . -type d -name '__pycache__' -delete
+	. $(activate) && coverage erase
+	-$(RM) -r htmlcov
 
-.PHONY: test unit integration lint format clean
+distclean: clean
+	@echo Cleaning the virtualenv...
+	-rm -rf $(VENV)
+
+.PHONY: test unit integration coverage lint format clean distclean
