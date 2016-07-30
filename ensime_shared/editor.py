@@ -9,6 +9,7 @@ class Editor(object):
 
     def __init__(self, driver):
         self._vim = driver
+        self._isneovim = bool(self._vim.eval("has('nvim')"))
 
         # Old API
         self._errors = []   # Line error structs reported from ENSIME notes
@@ -30,6 +31,11 @@ class Editor(object):
             self._vim.current.buffer.append(text, afterline)
         else:
             self._vim.current.buffer.append(text)
+
+    @property
+    def isneovim(self):
+        """bool: Whether the underlying editor is Neovim. Use this sparingly."""
+        return self._isneovim
 
     # TODO: make this read-only property-like?
     def current_word(self):
@@ -101,14 +107,6 @@ class Editor(object):
             return
 
         return choices[choice - 1]
-
-    def isneovim(self):
-        """Whether or not the underlying editor is Neovim. Use this sparingly.
-
-        :returns: TODO
-        """
-        # TODO: could be memoized
-        return bool(self._vim.eval("has('nvim')"))
 
     def replace_buffer_contents(self, lines, bufnr=None):
         """Replaces the contents of a buffer.

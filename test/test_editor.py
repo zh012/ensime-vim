@@ -8,7 +8,11 @@ from ensime_shared.editor import Editor
 
 @pytest.fixture
 def editor(vim):
-    return Editor(vim)
+    mockeditor = Editor(vim)
+    assert vim.mock_calls == [call.eval("has('nvim')")]
+
+    vim.reset_mock()  # Clear above constructor vim calls from call list
+    return mockeditor
 
 
 def test_append(editor, vim):

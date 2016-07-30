@@ -19,4 +19,13 @@ def vim():
     We'll just have to be careful since we can't import a real vim object to
     use autospec and guarantee that we're calling real APIs.
     """
-    return mock.NonCallableMock(name='mockvim')
+    def vimeval(expr):
+        # Default Editor.isneovim to False.
+        # TODO: easy way to override this; neovim mock fixture?
+        if expr == "has('nvim')":
+            return False
+        else:
+            return mock.DEFAULT
+
+    attrs = {'eval.side_effect': vimeval}
+    return mock.NonCallableMock(name='mockvim', **attrs)
