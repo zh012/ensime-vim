@@ -75,7 +75,6 @@ commands = {
     "disable_plugin": "set runtimepath-={}",
     "runtimepath": "&runtimepath",
     "syntastic_available": 'exists("g:SyntasticRegistry")',
-    "syntastic_enable": "if exists('g:SyntasticRegistry') | let &runtimepath .= ',' . {!r} | endif",
     "syntastic_append_notes":
         'if ! exists("b:ensime_scala_notes") | let b:ensime_scala_notes = [] | endif |'
         'let b:ensime_scala_notes += {}',

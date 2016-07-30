@@ -896,7 +896,6 @@ class Ensime(object):
         self.vim = vim
         # Map ensime configs to a ensime clients
         self.clients = {}
-        self.init_integrations()
 
     def init_settings(self):
         """Loads all the settings from the ``g:ensime_*`` namespace.
@@ -911,14 +910,6 @@ class Ensime(object):
         """
         gkey = "ensime_{}".format(key)
         return self.vim.vars.get(gkey, default)
-
-    def init_integrations(self):
-        syntastic_runtime = os.path.abspath(
-            os.path.join(os.path.dirname(__file__),
-                         os.path.pardir,
-                         'plugin_integrations',
-                         'syntastic'))
-        self.vim.command(commands['syntastic_enable'].format(syntastic_runtime))
 
     def client_keys(self):
         return self.clients.keys()
