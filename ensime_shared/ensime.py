@@ -17,7 +17,7 @@ from .errors import InvalidJavaPathError
 from .launcher import EnsimeLauncher
 from .protocol import ProtocolHandler, ProtocolHandlerV1, ProtocolHandlerV2
 from .typecheck import TypecheckHandler
-from .util import catch, module_exists, Util
+from .util import catch, module_exists, Pretty, Util
 
 # Queue depends on python version
 if sys.version_info > (3, 0):
@@ -275,7 +275,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
         self.log.debug('send: in')
         if self.running and self.ws:
             with catch(Exception, reconnect):  # FIXME: what Exception??
-                self.log.debug('send: %s', msg)
+                self.log.debug('send: sending JSON on WebSocket')
                 self.ws.send(msg + "\n")
 
     def connect_ensime_server(self):
@@ -711,7 +711,11 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
     def send_request(self, request):
         """Send a request to the server."""
         self.log.debug('send_request: in')
-        self.send(json.dumps({"callId": self.call_id, "req": request}))
+
+        message = {'callId': self.call_id, 'req': request}
+        self.log.debug('send_request: %s', Pretty(message))
+        self.send(json.dumps(message))
+
         call_id = self.call_id
         self.call_id += 1
         return call_id
@@ -845,7 +849,7 @@ class EnsimeClient(TypecheckHandler, DebuggerClient, ProtocolHandler):
                 # Unqueing messages until we get suggestions
                 self.unqueue(timeout=self.completion_timeout, should_wait=True)
                 suggestions = self.suggestions or []
-                self.log.debug('complete_func: suggests in %s', suggestions)
+                self.log.debug('complete_func: suggestions in')
                 for m in suggestions:
                     result.append(m)
                 self.suggestions = None

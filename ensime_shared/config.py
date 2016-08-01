@@ -17,9 +17,9 @@ gconfig = {
     "localhost": "http://127.0.0.1:{}/{}",
 }
 
+# Messages for user feedback, possible l10n fodder. Please keep alphabetized.
 feedback = {
     "analyzer_ready": "Analyzer is ready",
-    "displayed_type": "The type %s has been displayed",
     "failed_refactoring": "The refactoring could not be applied (more info at logs)",
     "full_types_enabled_off": "Qualified type display disabled",
     "full_types_enabled_on": "Qualified type display enabled",
@@ -36,7 +36,6 @@ feedback = {
     "spawned_browser": "Opened tab {}",
     "start_message": "Server has been started...",
     "typechecking": "Typechecking...",
-    "unhandled_response": "Response has not been handled: %s",
     "unknown_symbol": "Symbol not found",
 }
 

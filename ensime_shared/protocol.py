@@ -5,7 +5,7 @@ import webbrowser
 
 from ensime_shared.config import commands, feedback, gconfig
 from ensime_shared.symbol_format import completion_to_suggest
-from ensime_shared.util import catch
+from ensime_shared.util import catch, Pretty
 
 
 class ProtocolHandler(object):
@@ -45,7 +45,8 @@ class ProtocolHandler(object):
 
     def handle_incoming_response(self, call_id, payload):
         """Get a registered handler for a given response and execute it."""
-        self.log.debug('handle_incoming_response: in %s', payload)
+        self.log.debug('handle_incoming_response: in [typehint: %s, call ID: %s]',
+                       payload['typehint'], call_id)  # We already log the full JSON response
 
         typehint = payload["typehint"]
         handler = self.handlers.get(typehint)
@@ -58,7 +59,7 @@ class ProtocolHandler(object):
             with catch(NotImplementedError, feature_not_supported):
                 handler(call_id, payload)
         else:
-            self.log.warning(feedback['unhandled_response'], payload)
+            self.log.warning('Response has not been handled: %s', Pretty(payload))
 
     def handle_indexer_ready(self, call_id, payload):
         raise NotImplementedError()
@@ -152,7 +153,7 @@ class ProtocolHandlerV1(ProtocolHandler):
 
     def handle_symbol_search(self, call_id, payload):
         """Handler for symbol search results"""
-        self.log.debug('handle_symbol_search: in %s', payload)
+        self.log.debug('handle_symbol_search: in %s', Pretty(payload))
 
         syms = payload["syms"]
         qfList = []
@@ -236,7 +237,7 @@ class ProtocolHandlerV1(ProtocolHandler):
         # filter out completions without `typeInfo` field to avoid server bug. See #324
         completions = [c for c in payload["completions"] if "typeInfo" in c]
         self.suggestions = [completion_to_suggest(c) for c in completions]
-        self.log.debug('handle_completion_info_list: %s', self.suggestions)
+        self.log.debug('handle_completion_info_list: %s', Pretty(self.suggestions))
 
     def handle_type_inspect(self, call_id, payload):
         """Handler for responses `TypeInspectInfo`."""
@@ -254,7 +255,7 @@ class ProtocolHandlerV1(ProtocolHandler):
         else:
             tpe = payload['name']
 
-        self.log.info(feedback['displayed_type'], tpe)
+        self.log.info('Displayed type %s', tpe)
         self.raw_message(tpe)
 
 
