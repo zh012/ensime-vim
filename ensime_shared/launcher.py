@@ -11,9 +11,7 @@ import time
 
 from string import Template
 
-import sexpdata
-
-from ensime_shared.config import BOOTSTRAPS_ROOT
+from ensime_shared.config import BOOTSTRAPS_ROOT, ProjectConfig
 from ensime_shared.errors import InvalidJavaPathError
 from ensime_shared.util import catch, Util
 
@@ -65,7 +63,7 @@ class EnsimeLauncher(object):
         self.vim = vim
         self.ensime_version = self.ENSIME_V2 if server_v2 else self.ENSIME_V1
         self._config_path = os.path.abspath(config_path)
-        self.config = self.parse_config(self._config_path)
+        self.config = ProjectConfig(self._config_path)
         self.base_dir = os.path.abspath(base_dir)
         self.classpath_file = os.path.join(self.base_dir,
                                            self.config['scala-version'],
@@ -229,45 +227,6 @@ saveClasspathTask := {
         }
 
         return Template(src).substitute(replace)
-
-    @staticmethod
-    def parse_config(path):
-        """Parse an .ensime project config file, from S-expressions to dict."""
-
-        def paired(iterable):
-            """s -> (s0, s1), (s2, s3), (s4, s5), ..."""
-            cursor = iter(iterable)
-            return zip(cursor, cursor)
-
-        def unwrap_if_sexp_symbol(datum):
-            """
-            Convert Symbol(':key') to ':key' (Symbol isn't hashable for dict keys).
-            """
-            return datum.value() if isinstance(datum, sexpdata.Symbol) else datum
-
-        def sexp2dict(sexps):
-            """
-            Transforms a nested list structure from sexpdata to dict.
-
-            NOTE: This probably isn't general for all S-expression shapes parsed by
-            sexpdata, focused only on .ensime thus far.
-            """
-            newdict = {}
-
-            # Turn flat list into associative pairs
-            for key, value in paired(sexps):
-                key = str(unwrap_if_sexp_symbol(key)).lstrip(':')
-
-                # Recursively transform nested lists
-                if isinstance(value, list) and value and isinstance(value[0], list):
-                    newdict[key] = [sexp2dict(value[0])]
-                else:
-                    newdict[key] = value
-
-            return newdict
-
-        conf = sexpdata.loads(Util.read_file(path))
-        return sexp2dict(conf)
 
     def reorder_classpath(self, classpath_file):
         """Reorder classpath and put monkeys-jar in the first place."""
