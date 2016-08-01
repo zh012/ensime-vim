@@ -1074,6 +1074,18 @@ class Ensime(object):
         client.debug_continue(args, range)
 
     @execute_with_client()
+    def com_en_debug_step(self, client, args, range=None):
+        client.debug_step(args, range)
+
+    @execute_with_client()
+    def com_en_debug_step_out(self, client, args, range=None):
+        client.debug_step_out(args, range)
+
+    @execute_with_client()
+    def com_en_debug_next(self, client, args, range=None):
+        client.debug_next(args, range)
+
+    @execute_with_client()
     def com_en_debug_backtrace(self, client, args, range=None):
         client.debug_backtrace(args, range)
 

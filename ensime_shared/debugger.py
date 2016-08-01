@@ -65,3 +65,21 @@ class DebuggerClient(object):
             "typehint": "DebugBacktraceReq",
             "threadId": self.debug_thread_id,
             "index": 0, "count": 100})
+
+    def debug_step(self, args, range=None):
+        self.log.debug('debug_step: in')
+        self.send_request({
+            "typehint": "DebugStepReq",
+            "threadId": self.debug_thread_id})
+
+    def debug_step_out(self, args, range=None):
+        self.log.debug('debug_step_out: in')
+        self.send_request({
+            "typehint": "DebugStepOutReq",
+            "threadId": self.debug_thread_id})
+
+    def debug_next(self, args, range=None):
+        self.log.debug('debug_next: in')
+        self.send_request({
+            "typehint": "DebugNextReq",
+            "threadId": self.debug_thread_id})
