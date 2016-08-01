@@ -8,7 +8,7 @@ activate := $(VENV)/bin/activate
 requirements := requirements.txt test-requirements.txt
 deps := $(VENV)/deps-updated
 
-features := ensime_shared/spec/features
+features := test/features
 
 test: unit integration
 
