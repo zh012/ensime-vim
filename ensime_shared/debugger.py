@@ -29,7 +29,7 @@ class DebuggerClient(object):
 
 # API Call Build/Send
     def debug_set_break(self, args, range=None):
-        self.log("debug_set_break: in")
+        self.log.debug('debug_set_break: in')
         req = {"line": self.cursor()[0],
                "maxResults": 10,
                "typehint": "DebugSetBreakReq",
@@ -37,11 +37,11 @@ class DebuggerClient(object):
         self.send_request(req)
 
     def debug_clear_breaks(self, args, range=None):
-        self.log("debug_clear_breaks: in")
+        self.log.debug('debug_clear_breaks: in')
         self.send_request({"typehint": "DebugClearAllBreaksReq"})
 
     def debug_start(self, args, range=None):
-        self.log("debug_start: in")
+        self.log.debug('debug_start: in')
         if len(args) > 1:
             self.send_request({
                 "typehint": "DebugAttachReq",
@@ -54,13 +54,13 @@ class DebuggerClient(object):
                 "port": "5005"})
 
     def debug_continue(self, args, range=None):
-        self.log("debug_continue: in")
+        self.log.debug('debug_continue: in')
         self.send_request({
             "typehint": "DebugContinueReq",
             "threadId": self.debug_thread_id})
 
     def debug_backtrace(self, args, range=None):
-        self.log("debug_backtrace: in")
+        self.log.debug('debug_backtrace: in')
         self.send_request({
             "typehint": "DebugBacktraceReq",
             "threadId": self.debug_thread_id,

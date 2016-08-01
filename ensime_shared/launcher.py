@@ -57,7 +57,7 @@ class EnsimeProcess(object):
 class EnsimeLauncher(object):
     ENSIME_V1 = '1.0.0'
     ENSIME_V2 = '2.0.0-SNAPSHOT'
-    SBT_VERSION = '0.13.11'
+    SBT_VERSION = '0.13.12'
 
     def __init__(self, vim, config_path, server_v2, base_dir=BOOTSTRAPS_ROOT):
         self.vim = vim

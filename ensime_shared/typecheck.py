@@ -21,7 +21,7 @@ class TypecheckHandler(object):
                 self.buffered_notes['notes'].append(note)
 
     def start_typechecking(self):
-        self.log("getting ready")
+        self.log.info('Readying typecheck...')
         self.currently_buffering_typechecks = True
         if self.currently_buffering_typechecks:
             self.buffered_notes = {
@@ -78,5 +78,5 @@ class TypecheckHandler(object):
                 matcher = commands["enerror_matcher"].format(l, c, e)
                 match = self.vim.eval(matcher)
                 add_match_msg = "adding match {} at line {} column {} error {}"
-                self.log(add_match_msg.format(match, l, c, e))
+                self.log.debug(add_match_msg.format(match, l, c, e))
                 self.matches.append(match)
