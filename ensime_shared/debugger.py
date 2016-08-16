@@ -1,6 +1,8 @@
 # coding: utf-8
 
 import json
+import os
+import tempfile
 
 from ensime_shared.config import feedback
 
@@ -13,27 +15,37 @@ class DebuggerClient(object):
 # Response Handlers
     def handle_debug_output(self, call_id, payload):
         """Handle responses `DebugOutputEvent`."""
-        self.raw_message(payload["body"].encode("ascii", "ignore"))
+        self.editor.raw_message(payload["body"].encode("ascii", "ignore"))
 
     def handle_debug_break(self, call_id, payload):
         """Handle responses `DebugBreakEvent`."""
-        self.raw_message(feedback["notify_break"])
+        line = payload['line']
+        config = self.launcher.config  # TODO: make an attribute of client
+        path = os.path.relpath(payload['file'], config['root-dir'])
+
+        self.editor.raw_message(feedback['notify_break'].format(line, path))
         self.debug_thread_id = payload["threadId"]
 
+    # TODO: This leaves a lot to be desired...
     def handle_debug_backtrace(self, call_id, payload):
         """Handle responses `DebugBacktrace`."""
         frames = payload["frames"]
-        self.vim.command(":split backtrace.json")
-        to_json = json.dumps(frames, indent=2).split("\n")
-        self.vim.current.buffer[:] = to_json
+        fd, path = tempfile.mkstemp('.json', text=True, dir=self.tmp_diff_folder)
+        tmpfile = os.fdopen(fd, 'w')
+
+        tmpfile.write(json.dumps(frames, indent=2))
+        opts = {'readonly': True, 'bufhidden': 'wipe',
+                'buflisted': False, 'swapfile': False}
+        self.editor.split_window(path, size=20, bufopts=opts)
+        tmpfile.close()
 
 # API Call Build/Send
     def debug_set_break(self, args, range=None):
         self.log.debug('debug_set_break: in')
-        req = {"line": self.cursor()[0],
+        req = {"line": self.editor.cursor()[0],
                "maxResults": 10,
                "typehint": "DebugSetBreakReq",
-               "file": self.path()}
+               "file": self.editor.path()}
         self.send_request(req)
 
     def debug_clear_breaks(self, args, range=None):

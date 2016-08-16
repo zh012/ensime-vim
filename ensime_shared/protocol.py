@@ -1,9 +1,8 @@
 # coding: utf-8
 
-import json
 import webbrowser
 
-from ensime_shared.config import commands, feedback, gconfig
+from ensime_shared.config import feedback, gconfig
 from ensime_shared.symbol_format import completion_to_suggest
 from ensime_shared.util import catch, Pretty
 
@@ -53,7 +52,7 @@ class ProtocolHandler(object):
 
         def feature_not_supported(m):
             msg = feedback["handler_not_implemented"]
-            self.raw_message(msg.format(typehint, self.launcher.ensime_version))
+            self.editor.raw_message(msg.format(typehint, self.launcher.ensime_version))
 
         if handler:
             with catch(NotImplementedError, feature_not_supported):
@@ -99,14 +98,13 @@ class ProtocolHandlerV1(ProtocolHandler):
     """Implements response handlers for the v1 ENSIME Jerky protocol."""
 
     def handle_indexer_ready(self, call_id, payload):
-        self.message("indexer_ready")
+        self.editor.message("indexer_ready")
 
     def handle_analyzer_ready(self, call_id, payload):
-        self.message("analyzer_ready")
+        self.editor.message("analyzer_ready")
 
     def handle_debug_vm_error(self, call_id, payload):
-        msg = "Error. Check ensime-vim log for details."
-        self.vim.command(commands['display_message'].format(msg))
+        self.editor.raw_message('Error. Check ensime-vim log for details.')
 
     def handle_import_suggestions(self, call_id, payload):
         imports = list()
@@ -116,17 +114,12 @@ class ProtocolHandlerV1(ProtocolHandler):
         imports = list(sorted(set(imports)))
 
         if not imports:
-            msg = "No import suggestions found."
-            self.vim.command(commands['display_message'].format(msg))
+            self.editor.raw_message('No import suggestions found.')
             return
 
-        choices = ["{0}. {1}".format(*choice) for choice in enumerate(imports, start=1)]
-        menu = json.dumps(['Select class to import:'] + choices)
-        command = commands['select_item_list'].format(menu)
-        chosen_import = int(self.vim.eval(command))
-
-        if chosen_import > 0:
-            self.add_import(imports[chosen_import - 1])
+        choice = self.editor.menu('Select class to import:', imports)
+        if choice:
+            self.add_import(choice)
 
     def handle_package_info(self, call_id, payload):
         package = payload["fullName"]
@@ -135,16 +128,17 @@ class ProtocolHandlerV1(ProtocolHandler):
             indent = "  " * indentLevel
             t = member["declAs"]["typehint"] if member["typehint"] == "BasicTypeInfo" else ""
             line = "{}{}: {}".format(indent, t, member["name"])
-            self.vim.command(commands["append_line"].format("\'$\'", str(line)))
+            self.editor.append(line)
             if indentLevel < 4:
                 for m in member["members"]:
                     add(m, indentLevel + 1)
 
         # Create a new buffer 45 columns wide
-        cmd = commands["new_vertical_scratch"].format(str(45), "package_info")
-        self.vim.command(cmd)
-        self.vim.command(commands["set_filetype"].format("package_info"))
-        self.vim.command(commands["append_line"].format("\'$\'", str(package)))
+        opts = {'buftype': 'nofile', 'bufhidden': 'wipe', 'buflisted': False,
+                'filetype': 'package_info', 'swapfile': False}
+        self.editor.split_window('package_info', vertical=True, size=45, bufopts=opts)
+
+        self.editor.append(str(package))
         for member in payload["members"]:
             add(member, 1)
 
@@ -157,37 +151,34 @@ class ProtocolHandlerV1(ProtocolHandler):
         for sym in syms:
             p = sym.get("pos")
             if p:
-                item = self.to_quickfix_item(str(p["file"]),
-                                             p["line"],
-                                             str(sym["name"]),
-                                             "info")
+                item = self.editor.to_quickfix_item(str(p["file"]),
+                                                    p["line"],
+                                                    str(sym["name"]),
+                                                    "info")
                 qfList.append(item)
-        self.write_quickfix_list(qfList)
+        self.editor.write_quickfix_list(qfList)
 
     def handle_symbol_info(self, call_id, payload):
         """Handler for response `SymbolInfo`."""
-        with catch(KeyError, lambda e: self.message("unknown_symbol")):
+        with catch(KeyError, lambda e: self.editor.message("unknown_symbol")):
             decl_pos = payload["declPos"]
             f = decl_pos.get("file")
             call_options = self.call_options[call_id]
             self.log.debug('handle_symbol_info: call_options %s', call_options)
             display = call_options.get("display")
             if display and f:
-                self.vim.command(commands["display_message"].format(f))
+                self.editor.raw_message(f)
 
             open_definition = call_options.get("open_definition")
             if open_definition and f:
-                self.clean_errors()
-                self.vim_command("doautocmd_bufleave")
-                split = call_options.get("split")
-                vert = call_options.get("vert")
-                key = ""
-                if split:
-                    key = "vert_split_window" if vert else "split_window"
+                self.editor.clean_errors()
+                self.editor.doautocmd('BufLeave')
+                if call_options.get("split"):
+                    vert = call_options.get("vert")
+                    self.editor.split_window(f, vertical=vert)
                 else:
-                    key = "edit_file"
-                self.vim.command(commands[key].format(f))
-                self.vim_command("doautocmd_bufreadenter")
+                    self.editor.edit(f)
+                self.editor.doautocmd('BufReadPre', 'BufRead', 'BufEnter')
                 self.set_position(decl_pos)
                 del self.call_options[call_id]
 
@@ -223,10 +214,9 @@ class ProtocolHandlerV1(ProtocolHandler):
             return url
 
     def _format_source_file(self, newtext):
-        self.vim.current.buffer[:] = [  # FIXME: should assure original buffer
-            line.encode('utf-8')
-            for line in newtext.split('\n')
-        ]
+        formatted = [line.encode('utf-8') for line in newtext.split('\n')]
+        # FIXME: should assure original buffer, not whatever is now current
+        self.editor.replace_buffer_contents(formatted)
 
     def _browse_doc(self, url):
         self.log.debug('_browse_doc: %s', url)
@@ -235,7 +225,7 @@ class ProtocolHandlerV1(ProtocolHandler):
                 self.log.info('opened %s', url)
         except webbrowser.Error:
             self.log.exception('_browse_doc: webbrowser error')
-            self.raw_message(feedback["manual_doc"].format(url))
+            self.editor.raw_message(feedback["manual_doc"].format(url))
 
     def handle_completion_info_list(self, call_id, payload):
         """Handler for a completion response."""
@@ -251,7 +241,7 @@ class ProtocolHandlerV1(ProtocolHandler):
         interfaces = payload.get("interfaces")
         ts = [i["type"][style] for i in interfaces]
         prefix = "( " + ", ".join(ts) + " ) => "
-        self.raw_message(prefix + payload["type"][style])
+        self.editor.raw_message(prefix + payload["type"][style])
 
     # TODO @ktonga reuse completion suggestion formatting logic
     def show_type(self, call_id, payload):
@@ -262,7 +252,7 @@ class ProtocolHandlerV1(ProtocolHandler):
             tpe = payload['name']
 
         self.log.info('Displayed type %s', tpe)
-        self.raw_message(tpe)
+        self.editor.raw_message(tpe)
 
 
 class ProtocolHandlerV2(ProtocolHandlerV1):
