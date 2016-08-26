@@ -3,6 +3,7 @@
 import os
 
 from .client import EnsimeClientV1, EnsimeClientV2
+from .config import ProjectConfig
 from .editor import Editor
 from .launcher import EnsimeLauncher
 
@@ -32,32 +33,36 @@ class Ensime(object):
     There is normally one instance of ``Ensime`` per Vim session. It manages
     potentially multiple ``EnsimeClient`` instances if the user edits more than
     one ENSIME project.
+
+    Args:
+        vim: The ``vim`` module/singleton from the Vim Python API.
+
+    Attributes:
+        clients (Mapping[str, EnsimeClient]):
+            Active client instances, keyed by the filesystem path to the
+            ``.ensime`` configuration for their respective projects.
     """
 
     def __init__(self, vim):
-        self.vim = vim
-        # Map ensime configs to a ensime clients
+        # NOTE: The vim object cannot be used within the constructor due to
+        # race condition of autocommand handlers being invoked as they're being
+        # defined.
+        self._vim = vim
         self.clients = {}
 
-    def init_settings(self):
-        """Loads all the settings from the ``g:ensime_*`` namespace.
-
-        Invoked on client creation to avoid ``autocmd`` deadlocks.
-        """
-        self.server_v2 = bool(self.get_setting('server_v2', 0))
+    def using_server_v2(self):
+        """Whether user has configured the plugin to use ENSIME v2 protocol."""
+        return bool(self.get_setting('server_v2', 0))
 
     def get_setting(self, key, default):
         """Returns the value of a Vim variable ``g:ensime_{key}``
         if it is set, and ``default`` otherwise.
         """
         gkey = "ensime_{}".format(key)
-        return self.vim.vars.get(gkey, default)
-
-    def client_keys(self):
-        return self.clients.keys()
+        return self._vim.vars.get(gkey, default)
 
     def client_status(self, config_path):
-        """Get the client status of a given project."""
+        """Get status of client for a project, given path to its config."""
         c = self.client_for(config_path)
         status = "stopped"
         if not c or not c.ensime:
@@ -76,28 +81,15 @@ class Ensime(object):
             c.teardown()
 
     def current_client(self, quiet, bootstrap_server, create_client):
-        """Return the current client for a given project."""
-        current_file = self.vim.current.buffer.name
-        config_path = self.find_config_path(current_file)
+        """Return the client for current file in the editor."""
+        current_file = self._vim.current.buffer.name
+        config_path = ProjectConfig.find_from(current_file)
         if config_path:
             return self.client_for(
                 config_path,
                 quiet=quiet,
                 bootstrap_server=bootstrap_server,
                 create_client=create_client)
-
-    def find_config_path(self, path):
-        """Recursive function that finds the ensime config filepath."""
-        abs_path = os.path.abspath(path)
-        config_path = os.path.join(abs_path, '.ensime')
-
-        if abs_path == os.path.abspath('/'):
-            config_path = None
-        elif not os.path.isfile(config_path):
-            dirname = os.path.dirname(abs_path)
-            config_path = self.find_config_path(dirname)
-
-        return config_path
 
     def client_for(self, config_path, quiet=False, bootstrap_server=False,
                    create_client=False):
@@ -107,25 +99,23 @@ class Ensime(object):
         if abs_path in self.clients:
             client = self.clients[abs_path]
         elif create_client:
-            self.init_settings()
-            client = self.do_create_client(config_path)
+            client = self.create_client(config_path)
             if client.setup(quiet=quiet, bootstrap_server=bootstrap_server):
                 self.clients[abs_path] = client
         return client
 
-    def do_create_client(self, config_path):
-        editor = Editor(self.vim)
-        launcher = EnsimeLauncher(self.vim, config_path, self.server_v2)
-        if self.server_v2:
-            return EnsimeClientV2(editor, self.vim, launcher)
+    def create_client(self, config_path):
+        """Create an :class:`EnsimeClient` for a project, given its config file path.
+
+        This will launch the ENSIME server for the project as a side effect.
+        """
+        server_v2 = self.using_server_v2()
+        editor = Editor(self._vim)
+        launcher = EnsimeLauncher(self._vim, config_path, server_v2)
+        if server_v2:
+            return EnsimeClientV2(editor, self._vim, launcher)
         else:
-            return EnsimeClientV1(editor, self.vim, launcher)
-
-    def is_scala_file(self):
-        return self.vim.eval('&filetype') == 'scala'
-
-    def is_java_file(self):
-        return self.vim.eval('&filetype') == 'java'
+            return EnsimeClientV1(editor, self._vim, launcher)
 
     @execute_with_client()
     def com_en_toggle_teardown(self, client, args, range=None):
@@ -237,7 +227,7 @@ class Ensime(object):
 
     @execute_with_client()
     def com_en_clients(self, client, args, range=None):
-        for path in self.client_keys():
+        for path in self.clients.keys():
             status = self.client_status(path)
             client.editor.raw_message("{}: {}".format(path, status))
 
@@ -272,15 +262,18 @@ class Ensime(object):
     @execute_with_client()
     def fun_en_complete_func(self, client, findstart_and_base, base=None):
         """Invokable function from vim and neovim to perform completion."""
-        if self.is_scala_file() or self.is_java_file():
-            if not (isinstance(findstart_and_base, list)):
-                # Invoked by vim
-                findstart = findstart_and_base
-            else:
-                # Invoked by neovim
-                findstart = findstart_and_base[0]
-                base = findstart_and_base[1]
-            return client.complete_func(findstart, base)
+        current_filetype = self._vim.eval('&filetype')
+        if current_filetype not in ['scala', 'java']:
+            return
+
+        if isinstance(findstart_and_base, list):
+            # Invoked by neovim
+            findstart = findstart_and_base[0]
+            base = findstart_and_base[1]
+        else:
+            # Invoked by vim
+            findstart = findstart_and_base
+        return client.complete_func(findstart, base)
 
     @execute_with_client()
     def on_receive(self, client, name, callback):

@@ -34,3 +34,17 @@ def test_fails_when_given_invalid_config():
     badconf = path.local(__file__).dirpath() / 'resources' / 'broken.conf'
     with raises(sexpdata.ExpectClosingBracket):
         ProjectConfig(badconf.strpath)
+
+
+def test_finds_nearest_dot_ensime(tmpdir):
+    assert ProjectConfig.find_from('/bogus/path') is None
+
+    project_root = tmpdir
+    dotensime = project_root.ensure('.ensime').realpath()  # touch
+    assert ProjectConfig.find_from(project_root.strpath) == dotensime
+
+    subdir = project_root.ensure('src/main/scala', dir=True)
+    assert ProjectConfig.find_from(subdir.strpath) == dotensime
+
+    project_file = subdir.ensure('app.scala')
+    assert ProjectConfig.find_from(project_file.strpath) == dotensime
