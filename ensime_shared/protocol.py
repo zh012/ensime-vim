@@ -2,9 +2,9 @@
 
 import webbrowser
 
-from ensime_shared.config import feedback, gconfig
-from ensime_shared.symbol_format import completion_to_suggest
-from ensime_shared.util import catch, Pretty
+from .config import feedback, gconfig
+from .symbol_format import completion_to_suggest
+from .util import catch, Pretty
 
 
 class ProtocolHandler(object):
