@@ -351,7 +351,9 @@ class Editor(object):
         self._vim.options['updatetime'] = 1000
         # Keys with no effect, just retrigger CursorHold
         # http://vim.wikia.com/wiki/Timer_to_execute_commands_periodically
-        self._vim.command(r'call feedkeys("f\e")')
+        #self._vim.command(r'call feedkeys("f\e")')
+        #- change the key sequence to resolve the conflict of my key mapping
+        self._vim.command(r'call feedkeys("q\e")')
 
     def display_notes(self, notes):
         """Renders "notes" reported by ENSIME, such as typecheck errors."""
